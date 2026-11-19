@@ -4,11 +4,10 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { 
   ShoppingCart, Users, FileText, Settings, LogOut, Package, 
   Clock, Shield, Calendar, Store, UserX, PenTool, Banknote, 
-  Download, ArrowRight, CheckCircle, AlertTriangle, Search, Plus, Cloud
+  Download, ArrowRight, CheckCircle, AlertTriangle, Search, Plus, Cloud, ArrowLeft
 } from 'lucide-react';
 
 export default function App() {
-  // 1. Initial Data & Authentication States
   const [currentUser, setCurrentUser] = useState(null);
   const [currentView, setCurrentView] = useState('login');
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -19,13 +18,9 @@ export default function App() {
     { id: 'mgr01', pass: '1234', name: 'Vikram Singh (Manager)', role: 'Manager', auth: 'Floor' },
     { id: 'cash01', pass: '1234', name: 'Deepak Soni (Cashier)', role: 'Cashier', auth: 'Billing' },
     { id: 'sales01', pass: '1234', name: 'Rajesh Verma (Gold Sales)', role: 'Sales', auth: 'Counter' },
-    { id: 'sales02', pass: '1234', name: 'Jyoti Bhatnagar (Diamond)', role: 'Sales', auth: 'Counter' },
-    { id: 'tag01', pass: '1234', name: 'Mahesh Jangid (Tagging)', role: 'Staff', auth: 'Backoffice' },
-    { id: 'store01', pass: '1234', name: 'Neha Sharma (Store)', role: 'Store', auth: 'Backoffice' },
-    { id: 'acc01', pass: '1234', name: 'Harish Agarwal (Accounts)', role: 'Accounts', auth: 'Backoffice' }
+    { id: 'sales02', pass: '1234', name: 'Jyoti Bhatnagar (Diamond)', role: 'Sales', auth: 'Counter' }
   ];
 
-  // 2. Application States
   const [walkins, setWalkins] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [leaves, setLeaves] = useState([]);
@@ -39,7 +34,6 @@ export default function App() {
     500: 0, 200: 0, 100: 0, 50: 0, 20: 0, 10: 0, coins: 0
   });
 
-  // 3. FIREBASE LIVE SYNC - Load Data
   useEffect(() => {
     const docRef = doc(db, 'swarnasetu_cloud', 'main_store_data');
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -52,17 +46,15 @@ export default function App() {
         setRepairs(data.repairs || []);
         if(data.cashSlots) setCashSlots(data.cashSlots);
       }
-      setIsDataLoaded(true); // Allow saving only after initial load
+      setIsDataLoaded(true); 
     }, (error) => {
       console.error("Firebase Sync Error: ", error);
-      alert("Database connection error. Check your internet.");
     });
     return () => unsubscribe();
   }, []);
 
-  // 4. FIREBASE LIVE SYNC - Save Data Automatically
   useEffect(() => {
-    if (!isDataLoaded) return; // Prevent overwriting DB with empty states on refresh
+    if (!isDataLoaded) return; 
     const saveTimer = setTimeout(async () => {
       const dataToSave = { walkins, customers, leaves, storeItems, repairs, cashSlots };
       try {
@@ -70,12 +62,10 @@ export default function App() {
       } catch (error) {
         console.error("Error saving data: ", error);
       }
-    }, 1500); // 1.5 sec delay to batch multiple rapid changes (like cash slot counting)
-    
+    }, 1500); 
     return () => clearTimeout(saveTimer);
   }, [walkins, customers, leaves, storeItems, repairs, cashSlots, isDataLoaded]);
 
-  // 5. Login Handler
   const handleLogin = (e) => {
     e.preventDefault();
     const id = e.target.userid.value;
@@ -94,28 +84,42 @@ export default function App() {
     setCurrentView('login');
   };
 
-  // 6. UI Rendering Functions for Modules
+  // Reusable Clean Module Header with Back Button
+  const ModuleHeader = ({ title, icon }) => (
+    <div className="flex items-center gap-3 mb-6 pb-3 border-b border-gray-200">
+      <button 
+        onClick={() => setCurrentView('dashboard')}
+        className="p-1.5 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-gray-600 transition-colors shadow-sm flex items-center gap-1 text-sm font-medium"
+      >
+        <ArrowLeft size={16} /> Back
+      </button>
+      <div className="flex items-center gap-2 text-lg font-bold text-gray-800 ml-2">
+        <span className="text-orange-600">{icon}</span> {title}
+      </div>
+    </div>
+  );
+
   const renderLogin = () => (
-    <div className="min-h-screen bg-orange-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border-t-8 border-orange-600">
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-white rounded-xl shadow-lg p-8 border border-gray-100">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-orange-800">SwarnaSetu Pro</h1>
-          <p className="text-gray-500 font-medium">Cloud POS & ERP</p>
-          <div className="mt-2 inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
-            <Cloud size={14} /> Live Sync Active
+          <div className="inline-block p-3 bg-orange-50 rounded-full mb-3">
+            <Shield className="h-8 w-8 text-orange-600" />
           </div>
+          <h1 className="text-2xl font-bold text-gray-900">SwarnaSetu Pro</h1>
+          <p className="text-sm text-gray-500 mt-1">Store Management System</p>
         </div>
-        <form onSubmit={handleLogin} className="space-y-6">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">User ID</label>
-            <input type="text" name="userid" required className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 bg-gray-50" placeholder="e.g. sonu or cash01" />
+            <label className="block text-xs font-semibold text-gray-600 mb-1">USER ID</label>
+            <input type="text" name="userid" required className="w-full p-2.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Enter ID" />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
-            <input type="password" name="password" required className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 bg-gray-50" placeholder="Enter password" />
+            <label className="block text-xs font-semibold text-gray-600 mb-1">PASSWORD</label>
+            <input type="password" name="password" required className="w-full p-2.5 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Enter Password" />
           </div>
-          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-colors">
-            Secure Login
+          <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium text-sm py-2.5 rounded-md shadow-sm transition-colors mt-2">
+            Sign In
           </button>
         </form>
       </div>
@@ -123,34 +127,22 @@ export default function App() {
   );
 
   const renderDashboard = () => (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Welcome, {currentUser.name}</h2>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        <DashboardCard icon={<ShoppingCart />} title="Billing & POS" color="bg-blue-500" onClick={() => setCurrentView('billing')} />
-        <DashboardCard icon={<Users />} title="CRM & Customers" color="bg-green-500" onClick={() => setCurrentView('crm')} />
-        <DashboardCard icon={<UserX />} title="Walk-In Tracker" color="bg-red-500" onClick={() => setCurrentView('walkin')} />
-        <DashboardCard icon={<Calendar />} title="Leave Requests" color="bg-purple-500" onClick={() => setCurrentView('leave')} />
-        <DashboardCard icon={<Store />} title="Store & Supplies" color="bg-teal-500" onClick={() => setCurrentView('store')} />
-        <DashboardCard icon={<PenTool />} title="Repairs & Karigar" color="bg-amber-500" onClick={() => setCurrentView('repairs')} />
-        <DashboardCard icon={<Banknote />} title="Cash Drawer" color="bg-emerald-600" onClick={() => setCurrentView('cash')} />
-        <DashboardCard icon={<Download />} title="Tally & Excel Export" color="bg-indigo-500" onClick={() => setCurrentView('export')} />
-      </div>
-    </div>
-  );
-
-  const renderBilling = () => (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Billing & POS Counter</h2>
-      <div className="bg-white p-6 rounded-xl shadow border">
-        <p className="text-gray-500 mb-4">Scan tags, calculate making charges, and generate GST invoices.</p>
-        <div className="p-12 border-2 border-dashed border-gray-300 rounded-xl text-center">
-          <ShoppingCart className="mx-auto h-12 w-12 text-gray-400 mb-3" />
-          <h3 className="text-lg font-medium text-gray-900">Cart is Empty</h3>
-          <p className="text-gray-500">Scan a barcode or enter Tag ID to start billing.</p>
-          <button className="mt-4 bg-orange-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-orange-700">
-            + Add Dummy Tag (JWL-101)
-          </button>
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Overview</h2>
+          <p className="text-sm text-gray-500">Select a module to continue</p>
         </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <DashboardCard icon={<ShoppingCart size={20} />} title="Billing & POS" desc="Create invoices" colorClass="bg-blue-50 text-blue-600" onClick={() => setCurrentView('billing')} />
+        <DashboardCard icon={<Users size={20} />} title="CRM Profiles" desc="Customer data" colorClass="bg-green-50 text-green-600" onClick={() => setCurrentView('crm')} />
+        <DashboardCard icon={<UserX size={20} />} title="Walk-In Log" desc="Track visitors" colorClass="bg-red-50 text-red-600" onClick={() => setCurrentView('walkin')} />
+        <DashboardCard icon={<Calendar size={20} />} title="Leave Requests" desc="Staff attendance" colorClass="bg-purple-50 text-purple-600" onClick={() => setCurrentView('leave')} />
+        <DashboardCard icon={<Store size={20} />} title="Store Inventory" desc="Boxes & supplies" colorClass="bg-teal-50 text-teal-600" onClick={() => setCurrentView('store')} />
+        <DashboardCard icon={<PenTool size={20} />} title="Repairs" desc="Karigar tracking" colorClass="bg-amber-50 text-amber-600" onClick={() => setCurrentView('repairs')} />
+        <DashboardCard icon={<Banknote size={20} />} title="Cash Drawer" desc="Physical cash" colorClass="bg-emerald-50 text-emerald-600" onClick={() => setCurrentView('cash')} />
+        <DashboardCard icon={<Download size={20} />} title="Export Data" desc="Excel & Tally" colorClass="bg-indigo-50 text-indigo-600" onClick={() => setCurrentView('export')} />
       </div>
     </div>
   );
@@ -158,110 +150,64 @@ export default function App() {
   const renderWalkin = () => {
     const handleAddWalkin = (e) => {
       e.preventDefault();
-      const newWalkin = {
-        id: Date.now(),
-        phone: e.target.phone.value,
-        item: e.target.item.value,
-        reason: e.target.reason.value,
-        date: new Date().toLocaleDateString()
-      };
+      const newWalkin = { id: Date.now(), phone: e.target.phone.value, item: e.target.item.value, reason: e.target.reason.value, date: new Date().toLocaleDateString() };
       setWalkins([...walkins, newWalkin]);
       setCustomers([...customers, { ...newWalkin, type: 'Walk-In Prospect' }]);
       e.target.reset();
-      alert("Walk-In Saved to Live Cloud!");
     };
 
     return (
-      <div className="p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Walk-In & Loss Reason Tracker</h2>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow border">
-            <h3 className="font-bold text-lg mb-4">Log New Visitor</h3>
-            <form onSubmit={handleAddWalkin} className="space-y-4">
-              <input type="text" name="phone" placeholder="Customer Mobile No." required className="w-full p-2 border rounded" />
-              <input type="text" name="item" placeholder="Item Looked At (e.g. 22K Bangle)" required className="w-full p-2 border rounded" />
-              <select name="reason" className="w-full p-2 border rounded" required>
-                <option value="">-- Select Reason --</option>
-                <option value="High Making Charges">Making Charges Too High</option>
-                <option value="Design Not Available">Desired Design Not Available</option>
-                <option value="Window Shopping">Just Window Shopping</option>
-                <option value="Budget Mismatch">Budget Mismatch</option>
+      <div className="p-6 max-w-5xl mx-auto">
+        <ModuleHeader title="Walk-In Tracker" icon={<UserX size={20} />} />
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="md:col-span-1 bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+            <h3 className="font-semibold text-sm text-gray-800 mb-4">New Entry</h3>
+            <form onSubmit={handleAddWalkin} className="space-y-3">
+              <input type="text" name="phone" placeholder="Mobile Number" required className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500 outline-none" />
+              <input type="text" name="item" placeholder="Looking for (e.g. Ring)" required className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500 outline-none" />
+              <select name="reason" className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500 outline-none" required>
+                <option value="">-- Reason for leaving --</option>
+                <option value="High Making Charges">High Making Charges</option>
+                <option value="Design Issue">Design Not Available</option>
+                <option value="Window Shopping">Window Shopping</option>
               </select>
-              <button type="submit" className="w-full bg-red-600 text-white py-2 rounded-lg font-bold">Save Walk-In</button>
+              <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium py-2 rounded-md transition-colors shadow-sm">Save Entry</button>
             </form>
           </div>
-          <div className="bg-white p-6 rounded-xl shadow border overflow-y-auto max-h-96">
-            <h3 className="font-bold text-lg mb-4">Cloud Synced Walk-Ins</h3>
-            {walkins.map(w => (
-              <div key={w.id} className="p-3 border-b last:border-0 hover:bg-gray-50">
-                <div className="font-bold text-gray-800">{w.phone}</div>
-                <div className="text-sm text-gray-600">Looked at: {w.item} | <span className="text-red-600">{w.reason}</span></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderStore = () => {
-    const handleRequest = (name) => alert(`Request sent to Store Incharge for: ${name}`);
-    return (
-      <div className="p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Store & Consumables</h2>
-        <div className="bg-white rounded-xl shadow border overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="p-4 font-bold">Item Name</th>
-                <th className="p-4 font-bold">Category</th>
-                <th className="p-4 font-bold">Current Stock</th>
-                <th className="p-4 font-bold">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {storeItems.map(item => (
-                <tr key={item.id} className="border-b hover:bg-gray-50">
-                  <td className="p-4 font-medium">{item.name}</td>
-                  <td className="p-4 text-gray-600">{item.category}</td>
-                  <td className="p-4">
-                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${item.qty < 20 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                      {item.qty} units
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <button onClick={() => handleRequest(item.name)} className="text-teal-600 font-bold">Call Store</button>
-                  </td>
-                </tr>
+          <div className="md:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+             <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 font-semibold text-sm text-gray-700">Today's Log</div>
+             <div className="overflow-y-auto max-h-96">
+              {walkins.map(w => (
+                <div key={w.id} className="p-4 border-b border-gray-100 flex justify-between items-center hover:bg-gray-50">
+                  <div><div className="font-medium text-sm text-gray-900">{w.phone}</div><div className="text-xs text-gray-500">Item: {w.item}</div></div>
+                  <span className="text-xs font-medium px-2 py-1 bg-red-50 text-red-600 rounded-md">{w.reason}</span>
+                </div>
               ))}
-            </tbody>
-          </table>
+              {walkins.length === 0 && <p className="p-6 text-sm text-center text-gray-400">No entries yet.</p>}
+            </div>
+          </div>
         </div>
       </div>
     );
   };
 
   const renderCRM = () => (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Unified Cloud CRM</h2>
-      <div className="bg-white rounded-xl shadow border overflow-hidden">
-        <div className="p-4 bg-gray-50 border-b">
-          <span className="px-4 py-1 bg-green-200 text-green-800 rounded-full text-sm font-bold">Cloud Profiles: {customers.length}</span>
+    <div className="p-6 max-w-5xl mx-auto">
+      <ModuleHeader title="Customer Profiles" icon={<Users size={20} />} />
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+          <span className="text-sm font-semibold text-gray-700">Database</span>
+          <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold">Total: {customers.length}</span>
         </div>
-        <div className="p-6">
-          {customers.length === 0 ? <p className="text-gray-500 text-center">No customers synced yet.</p> : (
-            <ul className="space-y-3">
-              {customers.map((c, i) => (
-                <li key={i} className="p-4 border rounded-lg flex justify-between items-center hover:shadow-md">
-                  <div>
-                    <div className="font-bold text-lg">{c.phone}</div>
-                    <div className="text-sm text-gray-500">Interest: {c.item || 'General'}</div>
-                  </div>
-                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-bold">{c.type || 'Buyer'}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className="p-4">
+          <ul className="space-y-2">
+            {customers.map((c, i) => (
+              <li key={i} className="p-3 border border-gray-100 rounded-md flex justify-between items-center hover:shadow-sm bg-white">
+                <div><div className="font-medium text-sm text-gray-800">{c.phone}</div><div className="text-xs text-gray-500">{c.item || 'General Enquiry'}</div></div>
+                <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium">{c.type || 'Buyer'}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>
@@ -270,34 +216,35 @@ export default function App() {
   const renderLeave = () => {
     const applyLeave = (e) => {
       e.preventDefault();
-      setLeaves([...leaves, { id: Date.now(), user: currentUser.name, date: e.target.date.value, type: e.target.type.value, status: 'Pending Review' }]);
+      setLeaves([...leaves, { id: Date.now(), user: currentUser.name, date: e.target.date.value, type: e.target.type.value, status: 'Pending' }]);
       e.target.reset();
-      alert("Leave Request Synced to Cloud Manager!");
     };
 
     return (
-      <div className="p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Leave & Hierarchy</h2>
+      <div className="p-6 max-w-5xl mx-auto">
+        <ModuleHeader title="Leave Management" icon={<Calendar size={20} />} />
         <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow border">
-            <h3 className="font-bold text-lg mb-4">Apply for Leave</h3>
-            <form onSubmit={applyLeave} className="space-y-4">
-              <input type="date" name="date" required className="w-full p-2 border rounded" />
-              <select name="type" required className="w-full p-2 border rounded">
+          <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+            <h3 className="font-semibold text-sm text-gray-800 mb-4">Request Leave</h3>
+            <form onSubmit={applyLeave} className="space-y-3">
+              <input type="date" name="date" required className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-orange-500 outline-none" />
+              <select name="type" required className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-orange-500 outline-none">
                 <option value="Casual (Full Day)">Casual (Full Day)</option>
                 <option value="Sick Leave">Sick Leave</option>
               </select>
-              <button type="submit" className="w-full bg-purple-600 text-white py-2 rounded-lg font-bold">Submit Request</button>
+              <button type="submit" className="w-full bg-orange-600 text-white text-sm font-medium py-2 rounded-md hover:bg-orange-700 shadow-sm">Submit Request</button>
             </form>
           </div>
-          <div className="bg-white p-6 rounded-xl shadow border">
-            <h3 className="font-bold text-lg mb-4">Live Cloud Status</h3>
-            {leaves.filter(l => l.user === currentUser.name || currentUser.role === 'Admin').map(l => (
-              <div key={l.id} className="p-3 border-b flex justify-between items-center">
-                <div><div className="font-bold">{l.user}</div><div className="text-sm">{l.date} - {l.type}</div></div>
-                <span className="text-amber-600 font-bold text-sm bg-amber-100 px-2 py-1 rounded">{l.status}</span>
-              </div>
-            ))}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 font-semibold text-sm text-gray-700">My Requests</div>
+            <div>
+              {leaves.filter(l => l.user === currentUser.name || currentUser.role === 'Admin').map(l => (
+                <div key={l.id} className="p-4 border-b border-gray-100 flex justify-between items-center">
+                  <div><div className="font-medium text-sm">{l.user}</div><div className="text-xs text-gray-500">{l.date} • {l.type}</div></div>
+                  <span className="text-xs font-medium bg-amber-50 text-amber-600 px-2 py-1 rounded border border-amber-200">{l.status}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -305,24 +252,24 @@ export default function App() {
   };
 
   const renderCashDrawer = () => (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Live Cloud Cash Drawer (Synced)</h2>
-      <div className="bg-white p-6 rounded-xl shadow border">
+    <div className="p-6 max-w-5xl mx-auto">
+      <ModuleHeader title="Cash Drawer Manager" icon={<Banknote size={20} />} />
+      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {Object.entries(cashSlots).map(([note, count]) => (
-            <div key={note} className="p-4 bg-green-50 border border-green-200 rounded-xl text-center">
-              <div className="text-green-800 font-bold text-xl mb-2">{note === 'coins' ? 'Coins' : `₹${note}`}</div>
-              <div className="flex items-center justify-center gap-3">
-                <button onClick={() => setCashSlots({...cashSlots, [note]: Math.max(0, count - 1)})} className="bg-red-500 text-white w-8 h-8 rounded-full font-bold">-</button>
-                <span className="text-2xl font-bold w-12">{count}</span>
-                <button onClick={() => setCashSlots({...cashSlots, [note]: count + 1})} className="bg-green-500 text-white w-8 h-8 rounded-full font-bold">+</button>
+            <div key={note} className="p-3 border border-gray-100 rounded-lg text-center flex flex-col items-center">
+              <div className="text-gray-600 font-semibold text-sm mb-3">{note === 'coins' ? 'Coins' : `₹${note}`}</div>
+              <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-md border border-gray-200">
+                <button onClick={() => setCashSlots({...cashSlots, [note]: Math.max(0, count - 1)})} className="w-7 h-7 bg-white border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center font-bold text-sm shadow-sm">-</button>
+                <span className="text-sm font-semibold w-8 text-center">{count}</span>
+                <button onClick={() => setCashSlots({...cashSlots, [note]: count + 1})} className="w-7 h-7 bg-white border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center font-bold text-sm shadow-sm">+</button>
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-8 p-4 bg-gray-800 text-white rounded-xl flex justify-between items-center">
-          <div className="text-xl font-bold">Total Physical Cash in Drawer:</div>
-          <div className="text-3xl font-bold text-green-400">
+        <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center">
+          <div className="text-sm font-semibold text-gray-600">Total Cash in Drawer:</div>
+          <div className="text-xl font-bold text-green-600">
             ₹{Object.entries(cashSlots).reduce((total, [note, count]) => total + (note === 'coins' ? count : parseInt(note) * count), 0).toLocaleString('en-IN')}
           </div>
         </div>
@@ -330,54 +277,60 @@ export default function App() {
     </div>
   );
 
-  const renderExport = () => (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Tally & Daily Excel Export</h2>
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-white p-8 rounded-xl shadow border text-center">
-          <Download className="mx-auto h-16 w-16 text-indigo-500 mb-4" />
-          <h3 className="text-xl font-bold mb-2">Cloud Excel Export</h3>
-          <p className="text-gray-600 mb-6">Exports Data directly from Firebase Database.</p>
-          <button className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700">Download .xls</button>
-        </div>
+  const renderPlaceholder = (title, icon) => (
+    <div className="p-6 max-w-5xl mx-auto">
+      <ModuleHeader title={title} icon={icon} />
+      <div className="bg-white p-12 rounded-lg shadow-sm border border-gray-200 text-center">
+        <div className="inline-block p-4 bg-gray-50 rounded-full mb-3 text-gray-400">{icon}</div>
+        <h3 className="text-base font-semibold text-gray-800">Module Available Soon</h3>
+        <p className="text-sm text-gray-500 mt-1">This section is currently being configured.</p>
       </div>
     </div>
   );
 
   if (currentView === 'login') return renderLogin();
 
-  const DashboardCard = ({ icon, title, color, onClick }) => (
-    <button onClick={onClick} className={`${color} p-6 rounded-2xl shadow-lg text-white hover:scale-105 transition-transform flex flex-col items-center justify-center text-center gap-3`}>
-      <div className="p-3 bg-white/20 rounded-full">{icon}</div>
-      <span className="font-bold text-lg">{title}</span>
+  const DashboardCard = ({ icon, title, desc, colorClass, onClick }) => (
+    <button onClick={onClick} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-orange-300 transition-all text-left flex flex-col gap-3 group">
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClass}`}>
+        {icon}
+      </div>
+      <div>
+        <h3 className="font-semibold text-sm text-gray-900">{title}</h3>
+        <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+      </div>
     </button>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-orange-600 text-white shadow-md px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentView('dashboard')}>
-          <Shield className="h-8 w-8 text-orange-200" />
+    <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans">
+      <header className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentView('dashboard')}>
+          <Shield className="h-6 w-6 text-orange-600" />
           <div>
-            <h1 className="text-xl font-bold leading-tight">SwarnaSetu Pro</h1>
-            <p className="text-xs text-orange-200">Logged in as: {currentUser?.name} <span className="ml-2 text-green-300">● Cloud Sync ON</span></p>
+            <h1 className="text-base font-bold text-gray-900 tracking-tight">SwarnaSetu <span className="text-orange-600">Pro</span></h1>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentView('dashboard')} className="hover:bg-orange-700 px-4 py-2 rounded-lg font-medium">Module Hub</button>
-          <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-bold"><LogOut size={18} /> Logout</button>
+           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 bg-green-50 text-green-700 rounded-full border border-green-100">
+            <Cloud size={14} /> <span className="text-xs font-semibold">Cloud Sync</span>
+          </div>
+          <div className="text-xs text-gray-600 border-r border-gray-200 pr-4">User: <span className="font-bold">{currentUser?.name.split(' ')[0]}</span></div>
+          <button onClick={handleLogout} className="flex items-center gap-1.5 text-gray-500 hover:text-red-600 transition-colors text-sm font-medium">
+            <LogOut size={16} /> <span className="hidden sm:inline">Logout</span>
+          </button>
         </div>
       </header>
       <main className="flex-1 overflow-auto">
         {currentView === 'dashboard' && renderDashboard()}
-        {currentView === 'billing' && renderBilling()}
         {currentView === 'walkin' && renderWalkin()}
-        {currentView === 'leave' && renderLeave()}
-        {currentView === 'store' && renderStore()}
         {currentView === 'crm' && renderCRM()}
+        {currentView === 'leave' && renderLeave()}
         {currentView === 'cash' && renderCashDrawer()}
-        {currentView === 'export' && renderExport()}
-        {currentView === 'repairs' && <div className="p-6 text-center mt-20"><PenTool className="mx-auto h-20 w-20 text-amber-400 mb-4" /><h2 className="text-3xl font-bold">Repairs Module</h2></div>}
+        {currentView === 'billing' && renderPlaceholder('Billing & POS', <ShoppingCart size={24} />)}
+        {currentView === 'store' && renderPlaceholder('Store Inventory', <Store size={24} />)}
+        {currentView === 'repairs' && renderPlaceholder('Repairs & Karigar', <PenTool size={24} />)}
+        {currentView === 'export' && renderPlaceholder('Data Export', <Download size={24} />)}
       </main>
     </div>
   );
