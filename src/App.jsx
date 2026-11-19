@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { db } from './firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { 
   ShoppingCart, Users, FileText, Settings, LogOut, Package, 
   Clock, Shield, Calendar, Store, UserX, PenTool, Banknote, 
-  Download, ArrowRight, CheckCircle, AlertTriangle, Search, Plus
+  Download, ArrowRight, CheckCircle, AlertTriangle, Search, Plus, Cloud
 } from 'lucide-react';
 
 export default function App() {
   // 1. Initial Data & Authentication States
   const [currentUser, setCurrentUser] = useState(null);
   const [currentView, setCurrentView] = useState('login');
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   const users = [
     { id: 'sonu', pass: '@4266@', name: 'Sonu (Master Admin)', role: 'Admin', auth: 'Full' },
@@ -22,7 +25,7 @@ export default function App() {
     { id: 'acc01', pass: '1234', name: 'Harish Agarwal (Accounts)', role: 'Accounts', auth: 'Backoffice' }
   ];
 
-  // 2. Application States (Persisted in localStorage)
+  // 2. Application States
   const [walkins, setWalkins] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [leaves, setLeaves] = useState([]);
@@ -36,27 +39,43 @@ export default function App() {
     500: 0, 200: 0, 100: 0, 50: 0, 20: 0, 10: 0, coins: 0
   });
 
-  // Load data from localStorage on start
+  // 3. FIREBASE LIVE SYNC - Load Data
   useEffect(() => {
-    const savedData = localStorage.getItem('swarnasetu_pro_db_v1');
-    if (savedData) {
-      const parsed = JSON.parse(savedData);
-      setWalkins(parsed.walkins || []);
-      setCustomers(parsed.customers || []);
-      setLeaves(parsed.leaves || []);
-      setStoreItems(parsed.storeItems || storeItems);
-      setRepairs(parsed.repairs || []);
-      setCashSlots(parsed.cashSlots || cashSlots);
-    }
+    const docRef = doc(db, 'swarnasetu_cloud', 'main_store_data');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setWalkins(data.walkins || []);
+        setCustomers(data.customers || []);
+        setLeaves(data.leaves || []);
+        if(data.storeItems) setStoreItems(data.storeItems);
+        setRepairs(data.repairs || []);
+        if(data.cashSlots) setCashSlots(data.cashSlots);
+      }
+      setIsDataLoaded(true); // Allow saving only after initial load
+    }, (error) => {
+      console.error("Firebase Sync Error: ", error);
+      alert("Database connection error. Check your internet.");
+    });
+    return () => unsubscribe();
   }, []);
 
-  // Save data to localStorage on change
+  // 4. FIREBASE LIVE SYNC - Save Data Automatically
   useEffect(() => {
-    const dataToSave = { walkins, customers, leaves, storeItems, repairs, cashSlots };
-    localStorage.setItem('swarnasetu_pro_db_v1', JSON.stringify(dataToSave));
-  }, [walkins, customers, leaves, storeItems, repairs, cashSlots]);
+    if (!isDataLoaded) return; // Prevent overwriting DB with empty states on refresh
+    const saveTimer = setTimeout(async () => {
+      const dataToSave = { walkins, customers, leaves, storeItems, repairs, cashSlots };
+      try {
+        await setDoc(doc(db, 'swarnasetu_cloud', 'main_store_data'), dataToSave);
+      } catch (error) {
+        console.error("Error saving data: ", error);
+      }
+    }, 1500); // 1.5 sec delay to batch multiple rapid changes (like cash slot counting)
+    
+    return () => clearTimeout(saveTimer);
+  }, [walkins, customers, leaves, storeItems, repairs, cashSlots, isDataLoaded]);
 
-  // 3. Login Handler
+  // 5. Login Handler
   const handleLogin = (e) => {
     e.preventDefault();
     const id = e.target.userid.value;
@@ -75,14 +94,16 @@ export default function App() {
     setCurrentView('login');
   };
 
-  // 4. UI Rendering Functions for Modules
-
+  // 6. UI Rendering Functions for Modules
   const renderLogin = () => (
     <div className="min-h-screen bg-orange-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border-t-8 border-orange-600">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-orange-800">SwarnaSetu Pro</h1>
-          <p className="text-gray-500 font-medium">Jewellery POS & ERP</p>
+          <p className="text-gray-500 font-medium">Cloud POS & ERP</p>
+          <div className="mt-2 inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
+            <Cloud size={14} /> Live Sync Active
+          </div>
         </div>
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
@@ -97,11 +118,6 @@ export default function App() {
             Secure Login
           </button>
         </form>
-        <div className="mt-6 p-4 bg-orange-100 rounded-lg text-sm text-orange-800">
-          <p className="font-bold mb-1">Quick Demo Login:</p>
-          <p>Admin: <b>sonu</b> / @4266@</p>
-          <p>Cashier: <b>cash01</b> / 1234</p>
-        </div>
       </div>
     </div>
   );
@@ -150,10 +166,9 @@ export default function App() {
         date: new Date().toLocaleDateString()
       };
       setWalkins([...walkins, newWalkin]);
-      // Sync to CRM
       setCustomers([...customers, { ...newWalkin, type: 'Walk-In Prospect' }]);
       e.target.reset();
-      alert("Walk-In Saved & Synced to CRM!");
+      alert("Walk-In Saved to Live Cloud!");
     };
 
     return (
@@ -166,25 +181,23 @@ export default function App() {
               <input type="text" name="phone" placeholder="Customer Mobile No." required className="w-full p-2 border rounded" />
               <input type="text" name="item" placeholder="Item Looked At (e.g. 22K Bangle)" required className="w-full p-2 border rounded" />
               <select name="reason" className="w-full p-2 border rounded" required>
-                <option value="">-- Select Reason for Leaving --</option>
+                <option value="">-- Select Reason --</option>
                 <option value="High Making Charges">Making Charges Too High</option>
                 <option value="Design Not Available">Desired Design Not Available</option>
                 <option value="Window Shopping">Just Window Shopping</option>
                 <option value="Budget Mismatch">Budget Mismatch</option>
-                <option value="Will Come With Family">Will Come With Family</option>
               </select>
               <button type="submit" className="w-full bg-red-600 text-white py-2 rounded-lg font-bold">Save Walk-In</button>
             </form>
           </div>
           <div className="bg-white p-6 rounded-xl shadow border overflow-y-auto max-h-96">
-            <h3 className="font-bold text-lg mb-4">Recent Walk-Ins</h3>
+            <h3 className="font-bold text-lg mb-4">Cloud Synced Walk-Ins</h3>
             {walkins.map(w => (
               <div key={w.id} className="p-3 border-b last:border-0 hover:bg-gray-50">
                 <div className="font-bold text-gray-800">{w.phone}</div>
-                <div className="text-sm text-gray-600">Looked at: {w.item} | Reason: <span className="text-red-600 font-medium">{w.reason}</span></div>
+                <div className="text-sm text-gray-600">Looked at: {w.item} | <span className="text-red-600">{w.reason}</span></div>
               </div>
             ))}
-            {walkins.length === 0 && <p className="text-gray-500">No walk-ins recorded yet.</p>}
           </div>
         </div>
       </div>
@@ -192,27 +205,24 @@ export default function App() {
   };
 
   const renderStore = () => {
-    const handleRequest = (name) => {
-      alert(`Request sent to Store Incharge for: ${name}`);
-    };
-
+    const handleRequest = (name) => alert(`Request sent to Store Incharge for: ${name}`);
     return (
       <div className="p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Store & Consumables Requisition</h2>
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Store & Consumables</h2>
         <div className="bg-white rounded-xl shadow border overflow-hidden">
           <table className="w-full text-left">
             <thead className="bg-gray-100">
               <tr>
-                <th className="p-4 font-bold text-gray-700">Item Name</th>
-                <th className="p-4 font-bold text-gray-700">Category</th>
-                <th className="p-4 font-bold text-gray-700">Current Stock</th>
-                <th className="p-4 font-bold text-gray-700">Action</th>
+                <th className="p-4 font-bold">Item Name</th>
+                <th className="p-4 font-bold">Category</th>
+                <th className="p-4 font-bold">Current Stock</th>
+                <th className="p-4 font-bold">Action</th>
               </tr>
             </thead>
             <tbody>
               {storeItems.map(item => (
                 <tr key={item.id} className="border-b hover:bg-gray-50">
-                  <td className="p-4 font-medium text-gray-900">{item.name}</td>
+                  <td className="p-4 font-medium">{item.name}</td>
                   <td className="p-4 text-gray-600">{item.category}</td>
                   <td className="p-4">
                     <span className={`px-3 py-1 rounded-full text-sm font-bold ${item.qty < 20 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
@@ -220,9 +230,7 @@ export default function App() {
                     </span>
                   </td>
                   <td className="p-4">
-                    <button onClick={() => handleRequest(item.name)} className="text-teal-600 font-bold hover:underline">
-                      Call Store Incharge
-                    </button>
+                    <button onClick={() => handleRequest(item.name)} className="text-teal-600 font-bold">Call Store</button>
                   </td>
                 </tr>
               ))}
@@ -235,25 +243,21 @@ export default function App() {
 
   const renderCRM = () => (
     <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Unified CRM Database</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Unified Cloud CRM</h2>
       <div className="bg-white rounded-xl shadow border overflow-hidden">
-        <div className="p-4 bg-gray-50 border-b flex gap-2">
-          <span className="px-4 py-1 bg-green-200 text-green-800 rounded-full text-sm font-bold">Total Profiles: {customers.length}</span>
+        <div className="p-4 bg-gray-50 border-b">
+          <span className="px-4 py-1 bg-green-200 text-green-800 rounded-full text-sm font-bold">Cloud Profiles: {customers.length}</span>
         </div>
         <div className="p-6">
-          {customers.length === 0 ? (
-            <p className="text-gray-500 text-center">No customers found. Billing a customer or adding a walk-in will populate this list.</p>
-          ) : (
+          {customers.length === 0 ? <p className="text-gray-500 text-center">No customers synced yet.</p> : (
             <ul className="space-y-3">
               {customers.map((c, i) => (
-                <li key={i} className="p-4 border rounded-lg flex justify-between items-center hover:shadow-md transition">
+                <li key={i} className="p-4 border rounded-lg flex justify-between items-center hover:shadow-md">
                   <div>
                     <div className="font-bold text-lg">{c.phone}</div>
                     <div className="text-sm text-gray-500">Interest: {c.item || 'General'}</div>
                   </div>
-                  <div>
-                    <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-bold">{c.type || 'Buyer'}</span>
-                  </div>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-bold">{c.type || 'Buyer'}</span>
                 </li>
               ))}
             </ul>
@@ -266,16 +270,9 @@ export default function App() {
   const renderLeave = () => {
     const applyLeave = (e) => {
       e.preventDefault();
-      const newLeave = {
-        id: Date.now(),
-        user: currentUser.name,
-        date: e.target.date.value,
-        type: e.target.type.value,
-        status: 'Pending Review'
-      };
-      setLeaves([...leaves, newLeave]);
+      setLeaves([...leaves, { id: Date.now(), user: currentUser.name, date: e.target.date.value, type: e.target.type.value, status: 'Pending Review' }]);
       e.target.reset();
-      alert("Leave Request Submitted to Manager!");
+      alert("Leave Request Synced to Cloud Manager!");
     };
 
     return (
@@ -289,23 +286,18 @@ export default function App() {
               <select name="type" required className="w-full p-2 border rounded">
                 <option value="Casual (Full Day)">Casual (Full Day)</option>
                 <option value="Sick Leave">Sick Leave</option>
-                <option value="Half Day (First Half)">Half Day (First Half)</option>
               </select>
               <button type="submit" className="w-full bg-purple-600 text-white py-2 rounded-lg font-bold">Submit Request</button>
             </form>
           </div>
           <div className="bg-white p-6 rounded-xl shadow border">
-            <h3 className="font-bold text-lg mb-4">My Leave Status</h3>
+            <h3 className="font-bold text-lg mb-4">Live Cloud Status</h3>
             {leaves.filter(l => l.user === currentUser.name || currentUser.role === 'Admin').map(l => (
-              <div key={l.id} className="p-3 border-b last:border-0 flex justify-between items-center">
-                <div>
-                  <div className="font-bold">{l.user}</div>
-                  <div className="text-sm text-gray-600">{l.date} - {l.type}</div>
-                </div>
+              <div key={l.id} className="p-3 border-b flex justify-between items-center">
+                <div><div className="font-bold">{l.user}</div><div className="text-sm">{l.date} - {l.type}</div></div>
                 <span className="text-amber-600 font-bold text-sm bg-amber-100 px-2 py-1 rounded">{l.status}</span>
               </div>
             ))}
-            {leaves.length === 0 && <p className="text-gray-500">No leave history.</p>}
           </div>
         </div>
       </div>
@@ -314,7 +306,7 @@ export default function App() {
 
   const renderCashDrawer = () => (
     <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Cashier Note Denominations (Money Slots)</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Live Cloud Cash Drawer (Synced)</h2>
       <div className="bg-white p-6 rounded-xl shadow border">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {Object.entries(cashSlots).map(([note, count]) => (
@@ -344,30 +336,14 @@ export default function App() {
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-white p-8 rounded-xl shadow border text-center">
           <Download className="mx-auto h-16 w-16 text-indigo-500 mb-4" />
-          <h3 className="text-xl font-bold mb-2">Daily 9-Sheet Excel Export</h3>
-          <p className="text-gray-600 mb-6">Exports Summary, GST, Inventory, Leaves, and Petty Cash.</p>
-          <button className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700">
-            Download .xls File
-          </button>
-        </div>
-        <div className="bg-white p-8 rounded-xl shadow border text-center">
-          <Settings className="mx-auto h-16 w-16 text-blue-500 mb-4" />
-          <h3 className="text-xl font-bold mb-2">TallyPrime Integration</h3>
-          <p className="text-gray-600 mb-6">Generate XML Vouchers or push directly to Port 9000.</p>
-          <div className="flex flex-col gap-3">
-            <button className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700">
-              Download Tally XML (Alt+O)
-            </button>
-            <button className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-green-700">
-              Live Push to Tally (Port 9000)
-            </button>
-          </div>
+          <h3 className="text-xl font-bold mb-2">Cloud Excel Export</h3>
+          <p className="text-gray-600 mb-6">Exports Data directly from Firebase Database.</p>
+          <button className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700">Download .xls</button>
         </div>
       </div>
     </div>
   );
 
-  // 5. Main App Layout routing
   if (currentView === 'login') return renderLogin();
 
   const DashboardCard = ({ icon, title, color, onClick }) => (
@@ -379,26 +355,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Top Navbar */}
       <header className="bg-orange-600 text-white shadow-md px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentView('dashboard')}>
           <Shield className="h-8 w-8 text-orange-200" />
           <div>
             <h1 className="text-xl font-bold leading-tight">SwarnaSetu Pro</h1>
-            <p className="text-xs text-orange-200">Jewellery POS • Logged in as: {currentUser?.name}</p>
+            <p className="text-xs text-orange-200">Logged in as: {currentUser?.name} <span className="ml-2 text-green-300">● Cloud Sync ON</span></p>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentView('dashboard')} className="hover:bg-orange-700 px-4 py-2 rounded-lg font-medium transition">
-            Module Hub
-          </button>
-          <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-bold shadow transition">
-            <LogOut size={18} /> Logout
-          </button>
+          <button onClick={() => setCurrentView('dashboard')} className="hover:bg-orange-700 px-4 py-2 rounded-lg font-medium">Module Hub</button>
+          <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-bold"><LogOut size={18} /> Logout</button>
         </div>
       </header>
-
-      {/* Main Content Area */}
       <main className="flex-1 overflow-auto">
         {currentView === 'dashboard' && renderDashboard()}
         {currentView === 'billing' && renderBilling()}
@@ -408,13 +377,7 @@ export default function App() {
         {currentView === 'crm' && renderCRM()}
         {currentView === 'cash' && renderCashDrawer()}
         {currentView === 'export' && renderExport()}
-        {currentView === 'repairs' && (
-          <div className="p-6 text-center mt-20">
-            <PenTool className="mx-auto h-20 w-20 text-amber-400 mb-4" />
-            <h2 className="text-3xl font-bold text-gray-800">Karigar & Repairs Module</h2>
-            <p className="text-gray-500 mt-2">Active. Repair custody seamlessly transfers without triggering stock shortages.</p>
-          </div>
-        )}
+        {currentView === 'repairs' && <div className="p-6 text-center mt-20"><PenTool className="mx-auto h-20 w-20 text-amber-400 mb-4" /><h2 className="text-3xl font-bold">Repairs Module</h2></div>}
       </main>
     </div>
   );
