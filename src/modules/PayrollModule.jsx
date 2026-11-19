@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   MapPin, Calendar, FileSpreadsheet, UserPlus,
-  KeyRound, Download, Trash2, Save, X, UserCheck
+  KeyRound, Download, Trash2, Save, X, UserCheck, CheckCircle2
 } from 'lucide-react';
 
 const PRIVILEGE_OPTIONS = [
@@ -29,15 +29,22 @@ export default function PayrollModule({
   const isAdmin = currentUser?.privileges?.payroll_admin || currentUser?.role === 'Admin';
   const [tab, setTab] = useState('attendance');
   const [gpsStatus, setGpsStatus] = useState('');
+  const [bannerMsg, setBannerMsg] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [commissions, setCommissions] = useState({});
 
-  // States for Create vs Inspect/Edit User
+  // User Edit / Delete / Password States
   const [selectedStaffId, setSelectedStaffId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [newPrivileges, setNewPrivileges] = useState({ sales_estimate: true });
   const [resetPwdInput, setResetPwdInput] = useState('');
 
   const selectedStaff = staffList.find(s => s.id === selectedStaffId) || null;
+
+  const showBanner = (msg) => {
+    setBannerMsg(msg);
+    setTimeout(() => setBannerMsg(''), 4000);
+  };
 
   // 1. MANDATORY FIRST LOGIN RESET + KYC PROFILE FORM
   if (currentUser?.isFirstLogin) {
@@ -45,7 +52,10 @@ export default function PayrollModule({
       e.preventDefault();
       const f = e.target;
       const newPass = f.newPass.value.trim();
-      if (newPass.length < 4) return alert('Password must be at least 4 characters');
+      if (newPass.length < 4) {
+        showBanner('Password must be at least 4 characters.');
+        return;
+      }
 
       const updatedStaff = staffList.map(u => {
         if (u.id === currentUser.id) {
@@ -70,7 +80,6 @@ export default function PayrollModule({
         return u;
       });
       setStaffList(updatedStaff);
-      alert('Password Updated & Profile Saved!');
       onCompleteOnboarding();
     };
 
@@ -113,8 +122,8 @@ export default function PayrollModule({
             <input name="panNumber" type="text" required placeholder="ABCDE1234F" className="w-full px-3 py-2 border border-slate-200 rounded-lg uppercase" />
           </div>
           <div>
-            <label className="block font-semibold text-slate-600 mb-1">Aadhaar / Govt ID Number *</label>
-            <input name="idNumber" type="text" required placeholder="12-digit ID Number" className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
+            <label className="block font-semibold text-slate-600 mb-1">Aadhaar Card Number *</label>
+            <input name="idNumber" type="text" required placeholder="12-digit Aadhaar Number" className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
           </div>
           <div>
             <label className="block font-semibold text-slate-600 mb-1">Bank Name *</label>
@@ -152,7 +161,10 @@ export default function PayrollModule({
 
   // GPS Check-In Handler
   const handleMarkAttendance = (dayType = 'Full Day') => {
-    if (!navigator.geolocation) return alert('GPS not supported on this device');
+    if (!navigator.geolocation) {
+      setGpsStatus('GPS not supported on this device');
+      return;
+    }
     setGpsStatus('Fetching GPS location...');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -204,8 +216,16 @@ export default function PayrollModule({
     navigator.geolocation.getCurrentPosition((pos) => {
       const updated = { lat: pos.coords.latitude, lng: pos.coords.longitude, radius: officeGps.radius || 150 };
       setOfficeGps(updated);
-      alert(`Showroom GPS Saved! (${updated.lat.toFixed(4)}, ${updated.lng.toFixed(4)})`);
+      showBanner(`Showroom GPS Saved (${updated.lat.toFixed(4)}, ${updated.lng.toFixed(4)})`);
     });
+  };
+
+  // Select user & smoothly scroll to top editor (fixes mobile view)
+  const openStaffEditor = (staffId) => {
+    setSelectedStaffId(staffId);
+    setResetPwdInput('');
+    setConfirmDeleteId(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Create Staff Account (Admin)
@@ -213,7 +233,10 @@ export default function PayrollModule({
     e.preventDefault();
     const f = e.target;
     const id = f.userId.value.trim();
-    if (staffList.some(u => u.id === id)) return alert('User ID already exists!');
+    if (staffList.some(u => u.id === id)) {
+      showBanner(`Error: User ID "${id}" already exists.`);
+      return;
+    }
 
     const newStaff = {
       id,
@@ -230,7 +253,7 @@ export default function PayrollModule({
     setStaffList([...staffList, newStaff]);
     f.reset();
     setNewPrivileges({ sales_estimate: true });
-    alert(`Account created for ${newStaff.name}. They will reset password & fill KYC on first login.`);
+    showBanner(`Account created for ${newStaff.name} (ID: ${id}).`);
   };
 
   // Update Existing User Details & Privileges
@@ -255,7 +278,7 @@ export default function PayrollModule({
     });
 
     setStaffList(updatedList);
-    alert(`Updated details & privileges for ${f.editName.value.trim()}!`);
+    showBanner(`Saved changes & privileges for ${f.editName.value.trim()}.`);
   };
 
   // Toggle Privilege on Selected User
@@ -280,7 +303,10 @@ export default function PayrollModule({
   const handleAdminResetPassword = () => {
     if (!selectedStaff) return;
     const temp = resetPwdInput.trim();
-    if (temp.length < 4) return alert('Please enter at least 4 characters for the new password.');
+    if (temp.length < 4) {
+      showBanner('Enter at least 4 characters for the new password.');
+      return;
+    }
 
     const updatedList = staffList.map(u =>
       u.id === selectedStaff.id
@@ -289,18 +315,16 @@ export default function PayrollModule({
     );
     setStaffList(updatedList);
     setResetPwdInput('');
-    alert(`Password reset to "${temp}" for ${selectedStaff.name}. They will be forced to set a new password on next login.`);
+    showBanner(`Password reset to "${temp}" for ${selectedStaff.name}.`);
   };
 
-  // Delete User by Admin
-  const handleDeleteUser = (staffToDelete) => {
-    if (staffToDelete.id === 'sonu' || staffToDelete.id === currentUser.id) {
-      return alert('Cannot delete the active Master Admin account!');
-    }
-    if (window.confirm(`Are you sure you want to permanently delete user "${staffToDelete.name}" (${staffToDelete.id})?`)) {
-      setStaffList(staffList.filter(u => u.id !== staffToDelete.id));
-      if (selectedStaffId === staffToDelete.id) setSelectedStaffId(null);
-    }
+  // Execute Confirmed Delete
+  const executeDeleteUser = (staffToDelete) => {
+    if (staffToDelete.id === 'sonu' || staffToDelete.id === currentUser.id) return;
+    setStaffList(staffList.filter(u => u.id !== staffToDelete.id));
+    if (selectedStaffId === staffToDelete.id) setSelectedStaffId(null);
+    setConfirmDeleteId(null);
+    showBanner(`Deleted user "${staffToDelete.name}".`);
   };
 
   // Submit Leave Request
@@ -321,7 +345,7 @@ export default function PayrollModule({
     };
     setLeaveRequests([req, ...leaveRequests]);
     f.reset();
-    alert('Leave submitted! Waiting for your designated colleague to confirm handover.');
+    showBanner('Leave request sent to designated colleague.');
   };
 
   // Export Payroll to Excel
@@ -354,7 +378,15 @@ export default function PayrollModule({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {/* On-Screen Status Notification Banner */}
+      {bannerMsg && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between">
+          <span className="flex items-center gap-1.5"><CheckCircle2 size={15} /> {bannerMsg}</span>
+          <button onClick={() => setBannerMsg('')} className="text-emerald-600 hover:text-emerald-900"><X size={14} /></button>
+        </div>
+      )}
+
       {/* Sub-navigation White Pills */}
       <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs flex flex-wrap gap-1.5">
         {[
@@ -546,13 +578,13 @@ export default function PayrollModule({
       {/* TAB 3: ADMIN CREATE, INSPECT, EDIT PRIVILEGES, RESET PASSWORD & DELETE USER */}
       {tab === 'accounts' && isAdmin && (
         <div className="grid lg:grid-cols-3 gap-4">
-          {/* LEFT PANEL: Either Create New User OR Edit/Inspect Selected User */}
+          {/* LEFT / TOP PANEL: Create New User OR Edit Selected User */}
           <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
             {!selectedStaff ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold text-slate-900">Create New Staff Account</h3>
-                  <span className="text-[11px] text-slate-400">Click any staff on the right to edit or reset password</span>
+                  <span className="text-[11px] text-slate-400">Select any staff card to edit, reset password, or delete</span>
                 </div>
                 <form onSubmit={handleCreateUser} className="space-y-4 text-xs">
                   <div className="grid sm:grid-cols-3 gap-3">
@@ -630,13 +662,21 @@ export default function PayrollModule({
                   </div>
                   <div className="flex items-center gap-2">
                     {selectedStaff.id !== 'sonu' && selectedStaff.id !== currentUser.id && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteUser(selectedStaff)}
-                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded-lg inline-flex items-center gap-1"
-                      >
-                        <Trash2 size={13} /> Delete User
-                      </button>
+                      confirmDeleteId === selectedStaff.id ? (
+                        <div className="flex items-center gap-1.5 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200">
+                          <span className="text-[11px] font-bold text-red-700">Confirm?</span>
+                          <button type="button" onClick={() => executeDeleteUser(selectedStaff)} className="px-2 py-0.5 bg-red-600 text-white rounded text-[11px] font-bold">Yes</button>
+                          <button type="button" onClick={() => setConfirmDeleteId(null)} className="px-2 py-0.5 bg-white text-slate-700 border rounded text-[11px]">No</button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(selectedStaff.id)}
+                          className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded-lg inline-flex items-center gap-1"
+                        >
+                          <Trash2 size={13} /> Delete User
+                        </button>
+                      )
                     )}
                     <button
                       type="button"
@@ -652,7 +692,7 @@ export default function PayrollModule({
                 <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200/70 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="font-bold text-slate-800">Admin Password Reset</div>
-                    <div className="text-[11px] text-slate-500">Sets a new temporary password and requires user to change it on next login.</div>
+                    <div className="text-[11px] text-slate-500">Sets a new temporary password and requires user to reset it on next login.</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
@@ -734,6 +774,4 @@ export default function PayrollModule({
                         <div>Spouse: <strong className="text-slate-900">{selectedStaff.profile?.spouseName || '-'}</strong></div>
                         <div>Mobile: <strong className="text-slate-900">{selectedStaff.profile?.mobile || '-'}</strong></div>
                         <div>PAN: <strong className="text-slate-900">{selectedStaff.profile?.panNumber || '-'}</strong></div>
-                        <div>Govt ID: <strong className="text-slate-900">{selectedStaff.profile?.idNumber || '-'}</strong></div>
-                        <div>Bank: <strong className="text-slate-900">{selectedStaff.profile?.bankName || '-'}</strong></div>
-                        <div className="sm:col-span-2">A/C No
+                        <div>Govt ID: <strong className="text-slate-900
