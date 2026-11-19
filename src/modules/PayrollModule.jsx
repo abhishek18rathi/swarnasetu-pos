@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Users, MapPin, Calendar, FileSpreadsheet, UserPlus,
-  CheckCircle2, XCircle, Clock, Shield, KeyRound, Download
+  MapPin, Calendar, FileSpreadsheet, UserPlus,
+  KeyRound, Download, Trash2, Save, X, UserCheck
 } from 'lucide-react';
 
 const PRIVILEGE_OPTIONS = [
@@ -27,15 +27,17 @@ export default function PayrollModule({
   officeGps, setOfficeGps, onCompleteOnboarding
 }) {
   const isAdmin = currentUser?.privileges?.payroll_admin || currentUser?.role === 'Admin';
-  const [tab, setTab] = useState(isAdmin ? 'attendance' : 'attendance');
+  const [tab, setTab] = useState('attendance');
   const [gpsStatus, setGpsStatus] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [commissions, setCommissions] = useState({});
 
-  // New Staff Form States
-  const [newPrivileges, setNewPrivileges] = useState({
-    sales_estimate: true
-  });
+  // States for Create vs Inspect/Edit User
+  const [selectedStaffId, setSelectedStaffId] = useState(null);
+  const [newPrivileges, setNewPrivileges] = useState({ sales_estimate: true });
+  const [resetPwdInput, setResetPwdInput] = useState('');
+
+  const selectedStaff = staffList.find(s => s.id === selectedStaffId) || null;
 
   // 1. MANDATORY FIRST LOGIN RESET + KYC PROFILE FORM
   if (currentUser?.isFirstLogin) {
@@ -111,7 +113,7 @@ export default function PayrollModule({
             <input name="panNumber" type="text" required placeholder="ABCDE1234F" className="w-full px-3 py-2 border border-slate-200 rounded-lg uppercase" />
           </div>
           <div>
-            <label className="block font-semibold text-slate-600 mb-1">Aadhaar Card Number *</label>
+            <label className="block font-semibold text-slate-600 mb-1">Aadhaar / Govt ID Number *</label>
             <input name="idNumber" type="text" required placeholder="12-digit ID Number" className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
           </div>
           <div>
@@ -227,7 +229,78 @@ export default function PayrollModule({
     };
     setStaffList([...staffList, newStaff]);
     f.reset();
+    setNewPrivileges({ sales_estimate: true });
     alert(`Account created for ${newStaff.name}. They will reset password & fill KYC on first login.`);
+  };
+
+  // Update Existing User Details & Privileges
+  const handleUpdateStaff = (e) => {
+    e.preventDefault();
+    if (!selectedStaff) return;
+    const f = e.target;
+
+    const updatedList = staffList.map(u => {
+      if (u.id === selectedStaff.id) {
+        return {
+          ...u,
+          name: f.editName.value.trim(),
+          role: f.editRole.value,
+          baseSalary: Number(f.editSalary.value) || 0,
+          weeklyOff: f.editWeeklyOff.value,
+          commissionRate: Number(f.editCommission.value) || 0,
+          privileges: { ...selectedStaff.privileges }
+        };
+      }
+      return u;
+    });
+
+    setStaffList(updatedList);
+    alert(`Updated details & privileges for ${f.editName.value.trim()}!`);
+  };
+
+  // Toggle Privilege on Selected User
+  const toggleSelectedUserPrivilege = (privKey) => {
+    if (!selectedStaff) return;
+    const updatedList = staffList.map(u => {
+      if (u.id === selectedStaff.id) {
+        return {
+          ...u,
+          privileges: {
+            ...(u.privileges || {}),
+            [privKey]: !u.privileges?.[privKey]
+          }
+        };
+      }
+      return u;
+    });
+    setStaffList(updatedList);
+  };
+
+  // Reset Password by Admin
+  const handleAdminResetPassword = () => {
+    if (!selectedStaff) return;
+    const temp = resetPwdInput.trim();
+    if (temp.length < 4) return alert('Please enter at least 4 characters for the new password.');
+
+    const updatedList = staffList.map(u =>
+      u.id === selectedStaff.id
+        ? { ...u, pass: temp, isFirstLogin: true }
+        : u
+    );
+    setStaffList(updatedList);
+    setResetPwdInput('');
+    alert(`Password reset to "${temp}" for ${selectedStaff.name}. They will be forced to set a new password on next login.`);
+  };
+
+  // Delete User by Admin
+  const handleDeleteUser = (staffToDelete) => {
+    if (staffToDelete.id === 'sonu' || staffToDelete.id === currentUser.id) {
+      return alert('Cannot delete the active Master Admin account!');
+    }
+    if (window.confirm(`Are you sure you want to permanently delete user "${staffToDelete.name}" (${staffToDelete.id})?`)) {
+      setStaffList(staffList.filter(u => u.id !== staffToDelete.id));
+      if (selectedStaffId === staffToDelete.id) setSelectedStaffId(null);
+    }
   };
 
   // Submit Leave Request
@@ -251,7 +324,7 @@ export default function PayrollModule({
     alert('Leave submitted! Waiting for your designated colleague to confirm handover.');
   };
 
-  // Export Payroll to Excel (UTF-8 CSV opens cleanly in MS Excel)
+  // Export Payroll to Excel
   const exportPayrollExcel = () => {
     const headers = ['User ID', 'Staff Name', 'Role', 'Weekly Off', 'Base Salary', 'Full Days', 'Half Days', 'Commission', 'Net Payable', 'Bank Account', 'IFSC', 'PAN'];
     const rows = staffList.map(staff => {
@@ -429,7 +502,6 @@ export default function PayrollModule({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* Step 1: Colleague must say YES */}
                   {!req.colleagueApproved && req.designatedToId === currentUser.id && (
                     <button
                       onClick={() => {
@@ -441,7 +513,6 @@ export default function PayrollModule({
                     </button>
                   )}
 
-                  {/* Step 2: Manager Approves after Colleague says YES */}
                   {req.colleagueApproved && req.managerStatus === 'Pending Manager' && isAdmin && (
                     <>
                       <button
@@ -472,153 +543,197 @@ export default function PayrollModule({
         </div>
       )}
 
-      {/* TAB 3: ADMIN CREATE STAFF & PRIVILEGE TICK MARKS */}
+      {/* TAB 3: ADMIN CREATE, INSPECT, EDIT PRIVILEGES, RESET PASSWORD & DELETE USER */}
       {tab === 'accounts' && isAdmin && (
         <div className="grid lg:grid-cols-3 gap-4">
+          {/* LEFT PANEL: Either Create New User OR Edit/Inspect Selected User */}
           <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
-            <h3 className="text-sm font-bold text-slate-900 mb-4">Create Staff Account & Assign Privileges</h3>
-            <form onSubmit={handleCreateUser} className="space-y-4 text-xs">
-              <div className="grid sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Staff Name *</label>
-                  <input name="staffName" type="text" required placeholder="e.g. Deepak Soni" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+            {!selectedStaff ? (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-slate-900">Create New Staff Account</h3>
+                  <span className="text-[11px] text-slate-400">Click any staff on the right to edit or reset password</span>
                 </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Login ID *</label>
-                  <input name="userId" type="text" required placeholder="e.g. deepak01" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Temp Password *</label>
-                  <input name="tempPass" type="text" required placeholder="Temp@123" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Role</label>
-                  <select name="role" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                    <option value="Salesman">Salesman</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Cashier">Cashier</option>
-                    <option value="Admin">Admin</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Monthly Salary (₹)</label>
-                  <input name="baseSalary" type="number" required placeholder="25000" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Weekly Off Day</label>
-                  <select name="weeklyOff" defaultValue="Tuesday" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Commission (%)</label>
-                  <input name="commissionRate" type="number" step="0.1" defaultValue="0.5" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-2">Module Privileges (Tick to Allow)</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {PRIVILEGE_OPTIONS.map(p => (
-                    <label key={p.key} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200/80 hover:bg-slate-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!newPrivileges[p.key]}
-                        onChange={(e) => setNewPrivileges({ ...newPrivileges, [p.key]: e.target.checked })}
-                        className="rounded text-slate-900"
-                      />
-                      <span className="text-[11px] font-medium text-slate-700">{p.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg">
-                Create Account
-              </button>
-            </form>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
-            <h3 className="text-sm font-bold text-slate-900">Registered Staff ({staffList.length})</h3>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {staffList.map(s => (
-                <div key={s.id} className="p-3 rounded-xl border border-slate-200/80 text-xs">
-                  <div className="flex justify-between font-bold text-slate-900">
-                    <span>{s.name}</span>
-                    <span className="text-amber-700">₹{s.baseSalary}/mo</span>
+                <form onSubmit={handleCreateUser} className="space-y-4 text-xs">
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Staff Name *</label>
+                      <input name="staffName" type="text" required placeholder="e.g. Deepak Soni" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Login ID *</label>
+                      <input name="userId" type="text" required placeholder="e.g. deepak01" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Temp Password *</label>
+                      <input name="tempPass" type="text" required placeholder="Temp@123" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Role</label>
+                      <select name="role" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                        <option value="Salesman">Salesman</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Cashier">Cashier</option>
+                        <option value="Admin">Admin</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Monthly Salary (₹)</label>
+                      <input name="baseSalary" type="number" required placeholder="25000" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Weekly Off Day</label>
+                      <select name="weeklyOff" defaultValue="Tuesday" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Commission (%)</label>
+                      <input name="commissionRate" type="number" step="0.1" defaultValue="0.5" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
                   </div>
-                  <div className="text-slate-500 mt-0.5">ID: {s.id} • Role: {s.role} • Off: {s.weeklyOff}</div>
-                  <div className="mt-1">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.isFirstLogin ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                      {s.isFirstLogin ? 'Pending KYC & Reset' : `KYC Done • PAN: ${s.profile?.panNumber || 'N/A'}`}
-                    </span>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-2">Module Privileges (Tick to Allow)</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {PRIVILEGE_OPTIONS.map(p => (
+                        <label key={p.key} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200/80 hover:bg-slate-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!newPrivileges[p.key]}
+                            onChange={(e) => setNewPrivileges({ ...newPrivileges, [p.key]: e.target.checked })}
+                            className="rounded text-slate-900"
+                          />
+                          <span className="text-[11px] font-medium text-slate-700">{p.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg">
+                    Create Account
+                  </button>
+                </form>
+              </>
+            ) : (
+              /* SELECTED USER INSPECT & EDIT PANEL */
+              <div className="space-y-5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <UserCheck size={18} className="text-amber-600" />
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">{selectedStaff.name}</h3>
+                      <p className="text-[11px] text-slate-500">User ID: <strong>{selectedStaff.id}</strong> • Current Password: <strong>{selectedStaff.pass}</strong></p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedStaff.id !== 'sonu' && selectedStaff.id !== currentUser.id && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUser(selectedStaff)}
+                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded-lg inline-flex items-center gap-1"
+                      >
+                        <Trash2 size={13} /> Delete User
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStaffId(null)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg inline-flex items-center gap-1"
+                    >
+                      <X size={13} /> Close / New User
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* TAB 4: MONTHLY SALARY, COMMISSION & EXCEL EXPORT */}
-      {tab === 'salary' && isAdmin && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <h3 className="text-sm font-bold text-slate-900">Monthly Payroll Sheet</h3>
-              <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg" />
-            </div>
-            <button onClick={exportPayrollExcel} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5">
-              <Download size={14} /> Export to Excel
-            </button>
-          </div>
+                {/* PASSWORD RESET SECTION */}
+                <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200/70 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-bold text-slate-800">Admin Password Reset</div>
+                    <div className="text-[11px] text-slate-500">Sets a new temporary password and requires user to change it on next login.</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={resetPwdInput}
+                      onChange={(e) => setResetPwdInput(e.target.value)}
+                      placeholder="New Temp Password"
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg w-40"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAdminResetPassword}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg inline-flex items-center gap-1"
+                    >
+                      <KeyRound size={13} /> Reset Password
+                    </button>
+                  </div>
+                </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 border-b border-slate-100">
-                <tr>
-                  <th className="p-3">Staff Name</th>
-                  <th className="p-3">Base Pay</th>
-                  <th className="p-3">Full / Half Days</th>
-                  <th className="p-3">Earned Base</th>
-                  <th className="p-3">Commission (₹)</th>
-                  <th className="p-3">Net Payable</th>
-                </tr>
-              </thead>
-              <tbody>
-                {staffList.map(staff => {
-                  const mLogs = attendanceLogs.filter(a => a.userId === staff.id && a.date.startsWith(selectedMonth));
-                  const full = mLogs.filter(a => a.status === 'Full Day').length;
-                  const half = mLogs.filter(a => a.status === 'Half Day').length;
-                  const earned = Math.round((full + half * 0.5) * (staff.baseSalary / 30));
-                  const comm = Number(commissions[staff.id] || 0);
-                  return (
-                    <tr key={staff.id} className="border-b border-slate-50">
-                      <td className="p-3 font-bold text-slate-900">{staff.name} <span className="text-slate-400 font-normal">({staff.weeklyOff} Off)</span></td>
-                      <td className="p-3">₹{staff.baseSalary.toLocaleString('en-IN')}</td>
-                      <td className="p-3">{full} Full / {half} Half</td>
-                      <td className="p-3 font-semibold">₹{earned.toLocaleString('en-IN')}</td>
-                      <td className="p-3">
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={commissions[staff.id] || ''}
-                          onChange={(e) => setCommissions({ ...commissions, [staff.id]: e.target.value })}
-                          className="w-24 px-2 py-1 border border-slate-200 rounded-md"
-                        />
-                      </td>
-                      <td className="p-3 font-bold text-emerald-700">₹{(earned + comm).toLocaleString('en-IN')}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                {/* EDIT DETAILS & PRIVILEGES FORM */}
+                <form key={selectedStaff.id} onSubmit={handleUpdateStaff} className="space-y-4">
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Staff Name</label>
+                      <input name="editName" type="text" defaultValue={selectedStaff.name} required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Role</label>
+                      <select name="editRole" defaultValue={selectedStaff.role} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                        <option value="Salesman">Salesman</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Cashier">Cashier</option>
+                        <option value="Admin">Admin</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Monthly Salary (₹)</label>
+                      <input name="editSalary" type="number" defaultValue={selectedStaff.baseSalary} required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Weekly Off</label>
+                      <select name="editWeeklyOff" defaultValue={selectedStaff.weeklyOff} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-600 mb-1">Commission (%)</label>
+                      <input name="editCommission" type="number" step="0.1" defaultValue={selectedStaff.commissionRate} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-2">Edit Module Privileges (Tick / Untick)</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {PRIVILEGE_OPTIONS.map(p => (
+                        <label key={p.key} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200/80 hover:bg-slate-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!selectedStaff.privileges?.[p.key]}
+                            onChange={() => toggleSelectedUserPrivilege(p.key)}
+                            className="rounded text-slate-900"
+                          />
+                          <span className="text-[11px] font-medium text-slate-700">{p.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* SUBMITTED KYC DETAILS VIEW */}
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                    <div className="font-bold text-slate-800 mb-2">Submitted Staff KYC & Bank Details</div>
+                    {selectedStaff.isFirstLogin ? (
+                      <p className="text-amber-700">User has not completed first-login KYC setup yet.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600">
+                        <div>Father: <strong className="text-slate-900">{selectedStaff.profile?.fatherName || '-'}</strong></div>
+                        <div>Spouse: <strong className="text-slate-900">{selectedStaff.profile?.spouseName || '-'}</strong></div>
+                        <div>Mobile: <strong className="text-slate-900">{selectedStaff.profile?.mobile || '-'}</strong></div>
+                        <div>PAN: <strong className="text-slate-900">{selectedStaff.profile?.panNumber || '-'}</strong></div>
+                        <div>Govt ID: <strong className="text-slate-900">{selectedStaff.profile?.idNumber || '-'}</strong></div>
+                        <div>Bank: <strong className="text-slate-900">{selectedStaff.profile?.bankName || '-'}</strong></div>
+                        <div className="sm:col-span-2">A/C No
