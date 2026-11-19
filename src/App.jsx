@@ -7,6 +7,7 @@ import {
   Truck, Coins, TrendingUp, LogOut, ArrowLeft, Cloud
 } from 'lucide-react';
 import PayrollModule from './modules/PayrollModule';
+import InventoryModule from './modules/InventoryModule';
 
 const DEFAULT_ADMIN = {
   id: 'sonu',
@@ -32,7 +33,7 @@ export default function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Master Cloud States
+  // Module 1 Cloud States
   const [staffList, setStaffList] = useState([DEFAULT_ADMIN]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
@@ -40,6 +41,11 @@ export default function App() {
   const [liveRates, setLiveRates] = useState({
     gold24: 7850, gold22: 7250, gold18: 5950, silver: 92, goldCoin: 7900, silverCoin: 95
   });
+
+  // Module 2 Cloud States
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [customJewelTypes, setCustomJewelTypes] = useState({ Gold: [], Silver: [], 'Gold-Diamond': [] });
+  const [nightAudits, setNightAudits] = useState([]);
 
   // Sync with Firebase
   useEffect(() => {
@@ -52,13 +58,15 @@ export default function App() {
         if (d.leaveRequests) setLeaveRequests(d.leaveRequests);
         if (d.officeGps) setOfficeGps(d.officeGps);
         if (d.liveRates) setLiveRates(d.liveRates);
+        if (d.inventoryItems) setInventoryItems(d.inventoryItems);
+        if (d.customJewelTypes) setCustomJewelTypes(d.customJewelTypes);
+        if (d.nightAudits) setNightAudits(d.nightAudits);
       }
       setIsLoaded(true);
     });
     return () => unsub();
   }, []);
 
-  // Auto-save helper for modules
   const syncToCloud = async (updatedFields) => {
     try {
       await setDoc(doc(db, 'swarnasetu_cloud', 'erp_master_v2'), updatedFields, { merge: true });
@@ -67,7 +75,6 @@ export default function App() {
     }
   };
 
-  // Keep currentUser synced if their profile/password updates
   useEffect(() => {
     if (currentUser) {
       const fresh = staffList.find(u => u.id === currentUser.id);
@@ -88,10 +95,9 @@ export default function App() {
     }
   };
 
-  // 12 Modular Tiles Configuration
   const modules = [
     { id: 'payroll', title: 'Payroll & HR', desc: 'Staff, Privileges, GPS & Salary', icon: Users, color: 'text-indigo-600 bg-indigo-50', ready: true },
-    { id: 'inventory', title: 'Inventory & Vault', desc: 'AI Stock, Drafts & Night Audit', icon: Package, color: 'text-teal-600 bg-teal-50', ready: false },
+    { id: 'inventory', title: 'Inventory & Vault', desc: 'AI Stock, Drafts & Night Audit', icon: Package, color: 'text-teal-600 bg-teal-50', ready: true },
     { id: 'billing', title: 'Sales & Billing', desc: 'Estimates, Discounts & GST Bill', icon: ShoppingCart, color: 'text-blue-600 bg-blue-50', ready: false },
     { id: 'karigar', title: 'Karigar & Melter', desc: 'Gold Melting, Wastage & Repairs', icon: Hammer, color: 'text-amber-600 bg-amber-50', ready: false },
     { id: 'crm', title: 'CRM & Udhaari', desc: 'Customer Khata & Advances', icon: BookOpen, color: 'text-emerald-600 bg-emerald-50', ready: false },
@@ -135,15 +141,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-800 flex flex-col font-sans">
-      {/* Clean White Header */}
       <header className="bg-white border-b border-slate-200/80 px-5 py-2.5 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => !currentUser.isFirstLogin && setActiveModule('dashboard')}>
           <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
             <Shield size={18} />
           </div>
-          <div>
-            <span className="text-sm font-bold text-slate-900 tracking-tight">SwarnaSetu <span className="text-amber-600">Pro</span></span>
-          </div>
+          <span className="text-sm font-bold text-slate-900 tracking-tight">SwarnaSetu <span className="text-amber-600">Pro</span></span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -160,7 +163,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Live Gold & Silver Broadcast Strip */}
       <div className="bg-white border-b border-slate-200/80 px-5 py-2 flex items-center justify-between gap-4 overflow-x-auto text-xs">
         <div className="flex items-center gap-5 whitespace-nowrap">
           <span className="inline-flex items-center gap-1.5 font-bold text-amber-700 text-[11px] uppercase">
@@ -173,135 +175,4 @@ export default function App() {
           <span className="text-slate-600">Gold Coin: <strong className="text-slate-900">₹{liveRates.goldCoin}</strong></span>
           <span className="text-slate-600">Silver Coin: <strong className="text-slate-900">₹{liveRates.silverCoin}</strong></span>
         </div>
-        {currentUser.privileges?.rates_edit && (
-          <button
-            onClick={() => setActiveModule('rates')}
-            className="px-2.5 py-1 text-[11px] font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-md whitespace-nowrap transition-colors"
-          >
-            Update Rates
-          </button>
-        )}
-      </div>
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-5">
-        {activeModule !== 'dashboard' && !currentUser.isFirstLogin && (
-          <div className="mb-4">
-            <button
-              onClick={() => setActiveModule('dashboard')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors"
-            >
-              <ArrowLeft size={14} /> Back to Dashboard
-            </button>
-          </div>
-        )}
-
-        {/* White Tile Dashboard */}
-        {activeModule === 'dashboard' && (
-          <div>
-            <div className="mb-5">
-              <h2 className="text-base font-bold text-slate-900">Showroom Control Center</h2>
-              <p className="text-xs text-slate-500">Select a module tile to manage operations</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
-              {modules.map((mod) => {
-                const Icon = mod.icon;
-                return (
-                  <button
-                    key={mod.id}
-                    onClick={() => setActiveModule(mod.id)}
-                    className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-md hover:border-slate-300 transition-all text-left flex flex-col justify-between group"
-                  >
-                    <div className="flex items-start justify-between w-full mb-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${mod.color}`}>
-                        <Icon size={18} />
-                      </div>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${mod.ready ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {mod.ready ? 'Active' : 'Next'}
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-900 group-hover:text-amber-700 transition-colors">{mod.title}</h3>
-                      <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{mod.desc}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Live Rates Editor Tile */}
-        {activeModule === 'rates' && (
-          <div className="max-w-lg mx-auto bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-6">
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-              <TrendingUp size={18} className="text-amber-600" />
-              <h3 className="text-sm font-bold text-slate-900">Broadcast Daily Metal Rates</h3>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const updated = {
-                  gold24: Number(e.target.gold24.value),
-                  gold22: Number(e.target.gold22.value),
-                  gold18: Number(e.target.gold18.value),
-                  silver: Number(e.target.silver.value),
-                  goldCoin: Number(e.target.goldCoin.value),
-                  silverCoin: Number(e.target.silverCoin.value)
-                };
-                setLiveRates(updated);
-                syncToCloud({ liveRates: updated });
-                alert('Rates Broadcasted Live!');
-                setActiveModule('dashboard');
-              }}
-              className="grid grid-cols-2 gap-3"
-            >
-              {[
-                { key: 'gold24', label: '24K Gold (999)' },
-                { key: 'gold22', label: '22K Gold (916)' },
-                { key: 'gold18', label: '18K Gold (750)' },
-                { key: 'silver', label: 'Fine Silver' },
-                { key: 'goldCoin', label: 'Gold Coin' },
-                { key: 'silverCoin', label: 'Silver Coin' }
-              ].map((f) => (
-                <div key={f.key}>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">{f.label}</label>
-                  <input name={f.key} type="number" step="0.01" defaultValue={liveRates[f.key]} required className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg font-bold" />
-                </div>
-              ))}
-              <div className="col-span-2 pt-2">
-                <button type="submit" className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg">
-                  Publish Live Rates
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* MODULE 1: PAYROLL & HR */}
-        {activeModule === 'payroll' && (
-          <PayrollModule
-            currentUser={currentUser}
-            staffList={staffList}
-            setStaffList={(newList) => { setStaffList(newList); syncToCloud({ staffList: newList }); }}
-            attendanceLogs={attendanceLogs}
-            setAttendanceLogs={(newLogs) => { setAttendanceLogs(newLogs); syncToCloud({ attendanceLogs: newLogs }); }}
-            leaveRequests={leaveRequests}
-            setLeaveRequests={(newLeaves) => { setLeaveRequests(newLeaves); syncToCloud({ leaveRequests: newLeaves }); }}
-            officeGps={officeGps}
-            setOfficeGps={(newGps) => { setOfficeGps(newGps); syncToCloud({ officeGps: newGps }); }}
-            onCompleteOnboarding={() => setActiveModule('dashboard')}
-          />
-        )}
-
-        {/* Modular Placeholders for Modules 2-12 (Ready to be added one by one) */}
-        {activeModule !== 'dashboard' && activeModule !== 'payroll' && activeModule !== 'rates' && (
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-10 text-center max-w-md mx-auto">
-            <h3 className="text-sm font-bold text-slate-900 capitalize">{activeModule} Module</h3>
-            <p className="text-xs text-slate-500 mt-1">Module slot ready. Say "Build {activeModule}" when you want to activate this file.</p>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+        {currentUser.privileges
