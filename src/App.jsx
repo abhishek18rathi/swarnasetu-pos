@@ -5,7 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   ShoppingCart, Users, FileText, Settings, LogOut, Package, 
   Clock, Shield, Calendar, Store, UserX, PenTool, Banknote, 
-  Download, ArrowRight, CheckCircle, AlertTriangle, Search, Plus, Cloud, ArrowLeft, Tag, Image as ImageIcon, Trash2, Printer
+  Download, ArrowRight, CheckCircle, AlertTriangle, Search, Plus, Cloud, ArrowLeft, Tag, Image as ImageIcon, Trash2, Printer, TrendingUp
 } from 'lucide-react';
 
 export default function App() {
@@ -14,31 +14,33 @@ export default function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // States for Stock
+  // States for Live Rates
+  const [liveRates, setLiveRates] = useState({
+    gold24: 0, gold22: 0, gold18: 0, silver: 0, goldCoin: 0, silverCoin: 0
+  });
+
   const [metalType, setMetalType] = useState('');
   const [jewelCategory, setJewelCategory] = useState('');
   const [tagCode, setTagCode] = useState('');
-
-  // States for Billing
   const [cart, setCart] = useState([]);
-  const [goldRate, setGoldRate] = useState(7500); // Per Gram
-  const [silverRate, setSilverRate] = useState(90); // Per Gram
   const [billingSearch, setBillingSearch] = useState('');
 
   const users = [
     { id: 'sonu', pass: '@4266@', name: 'Sonu (Master Admin)', role: 'Admin', auth: 'Full' },
-    { id: 'cash01', pass: '1234', name: 'Deepak Soni (Cashier)', role: 'Cashier', auth: 'Billing' }
+    { id: 'cash01', pass: '1234', name: 'Deepak Soni (Cashier)', role: 'Cashier', auth: 'Billing' },
+    { id: 'sales01', pass: '1234', name: 'Rajesh Verma (Sales)', role: 'Sales', auth: 'Counter' }
   ];
 
   const [jewelryStock, setJewelryStock] = useState([]); 
 
-  // 1. FIREBASE SYNC
+  // 1. FIREBASE SYNC (LIVE CLOUD)
   useEffect(() => {
     const docRef = doc(db, 'swarnasetu_cloud', 'main_store_data');
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if(data.jewelryStock) setJewelryStock(data.jewelryStock);
+        if(data.liveRates) setLiveRates(data.liveRates);
       }
       setIsDataLoaded(true); 
     });
@@ -48,18 +50,15 @@ export default function App() {
   useEffect(() => {
     if (!isDataLoaded) return; 
     const saveTimer = setTimeout(async () => {
-      const dataToSave = { jewelryStock };
+      const dataToSave = { jewelryStock, liveRates };
       try {
-        // We use merge: true so we don't overwrite Walkins/CRM if not included here
         await setDoc(doc(db, 'swarnasetu_cloud', 'main_store_data'), dataToSave, { merge: true });
-      } catch (error) {
-        console.error("Error saving: ", error);
-      }
+      } catch (error) { console.error("Error saving: ", error); }
     }, 1500); 
     return () => clearTimeout(saveTimer);
-  }, [jewelryStock, isDataLoaded]);
+  }, [jewelryStock, liveRates, isDataLoaded]);
 
-  // 2. AUTO TAG GENERATION LOGIC
+  // 2. AUTO TAG LOGIC
   useEffect(() => {
     if (metalType && jewelCategory) {
       const mPrefix = metalType === 'Gold' ? 'GLD' : metalType === 'Silver' ? 'SLV' : 'DMD';
@@ -73,12 +72,8 @@ export default function App() {
           return isNaN(num) ? 0 : num;
         }));
         setTagCode(`${prefix}${maxNum + 1}`);
-      } else {
-        setTagCode(`${prefix}1001`);
-      }
-    } else {
-      setTagCode(''); 
-    }
+      } else { setTagCode(`${prefix}1001`); }
+    } else { setTagCode(''); }
   }, [metalType, jewelCategory, jewelryStock.length]);
 
   const handleLogin = (e) => {
@@ -104,39 +99,81 @@ export default function App() {
   const renderDashboard = () => (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <DashboardCard icon={<TrendingUp size={20} />} title="Live Rates Master" desc="Update Gold/Silver Rates" colorClass="bg-yellow-50 text-yellow-600 border-yellow-200" onClick={() => setCurrentView('rates')} />
         <DashboardCard icon={<ShoppingCart size={20} />} title="Billing & POS" desc="Create GST Invoices" colorClass="bg-blue-50 text-blue-600" onClick={() => setCurrentView('billing')} />
         <DashboardCard icon={<Tag size={20} />} title="Jewelry Stock" desc="Upload Photos & Tags" colorClass="bg-teal-50 text-teal-600" onClick={() => setCurrentView('stock')} />
       </div>
     </div>
   );
 
-  // MODULE: JEWELRY STOCK 
+  // NEW MODULE: LIVE RATES MASTER
+  const renderLiveRates = () => {
+    const handleSaveRates = (e) => {
+      e.preventDefault();
+      setLiveRates({
+        gold24: Number(e.target.gold24.value),
+        gold22: Number(e.target.gold22.value),
+        gold18: Number(e.target.gold18.value),
+        silver: Number(e.target.silver.value),
+        goldCoin: Number(e.target.goldCoin.value),
+        silverCoin: Number(e.target.silverCoin.value)
+      });
+      alert("Live Rates Broadcasted to all Screens!");
+      setCurrentView('dashboard');
+    };
+
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <ModuleHeader title="Daily Live Rates Master" icon={<TrendingUp size={20} />} />
+        
+        {currentUser?.role === 'Admin' ? (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-yellow-200">
+            <h3 className="font-bold text-gray-800 mb-4 text-center">Update Today's Metal Rates (per gram)</h3>
+            <form onSubmit={handleSaveRates} className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-4 p-4 bg-yellow-50 border border-yellow-100 rounded-lg">
+                <h4 className="font-bold text-yellow-800 border-b border-yellow-200 pb-2">Gold Rates</h4>
+                <div><label className="text-xs font-bold text-gray-600">24 KT Gold (999)</label><input type="number" name="gold24" defaultValue={liveRates.gold24} required className="w-full p-2 mt-1 border rounded font-bold" /></div>
+                <div><label className="text-xs font-bold text-gray-600">22 KT Gold (916)</label><input type="number" name="gold22" defaultValue={liveRates.gold22} required className="w-full p-2 mt-1 border rounded font-bold" /></div>
+                <div><label className="text-xs font-bold text-gray-600">18 KT Gold (750)</label><input type="number" name="gold18" defaultValue={liveRates.gold18} required className="w-full p-2 mt-1 border rounded font-bold" /></div>
+              </div>
+              <div className="space-y-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <h4 className="font-bold text-gray-700 border-b border-gray-200 pb-2">Silver & Coins</h4>
+                <div><label className="text-xs font-bold text-gray-600">Fine Silver</label><input type="number" name="silver" defaultValue={liveRates.silver} required className="w-full p-2 mt-1 border rounded font-bold" /></div>
+                <div><label className="text-xs font-bold text-gray-600">Gold Coin (24KT)</label><input type="number" name="goldCoin" defaultValue={liveRates.goldCoin} required className="w-full p-2 mt-1 border rounded font-bold" /></div>
+                <div><label className="text-xs font-bold text-gray-600">Silver Coin</label><input type="number" name="silverCoin" defaultValue={liveRates.silverCoin} required className="w-full p-2 mt-1 border rounded font-bold" /></div>
+              </div>
+              <div className="md:col-span-2 mt-2">
+                <button type="submit" className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 rounded-lg text-lg shadow-md transition-all">
+                  Broadcast Rates Live
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <div className="bg-red-50 p-12 text-center border border-red-200 rounded-lg">
+            <Shield className="mx-auto h-12 w-12 text-red-400 mb-4" />
+            <h2 className="text-xl font-bold text-red-800">Admin Access Required</h2>
+            <p className="text-red-600 mt-2">Only the Master Admin can update daily live rates. You can view the current rates in the top yellow bar.</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderJewelryStock = () => {
     const handleAddStock = async (e) => {
       e.preventDefault();
-      const code = tagCode; 
-      const weight = e.target.weight.value;
       const file = e.target.photo.files[0];
-
-      if (!file) return alert("Please select a photo!");
+      if (!file) return alert("Photo needed!");
       setIsUploading(true);
       try {
-        const imageRef = ref(storage, `jewelry_pics/${code}_${Date.now()}`);
+        const imageRef = ref(storage, `jewelry_pics/${tagCode}_${Date.now()}`);
         await uploadBytes(imageRef, file);
         const imageUrl = await getDownloadURL(imageRef);
-        const newItem = { id: Date.now(), code, metal: metalType, category: jewelCategory, weight: parseFloat(weight), imageUrl };
-        
-        setJewelryStock([...jewelryStock, newItem]);
+        setJewelryStock([...jewelryStock, { id: Date.now(), code: tagCode, metal: metalType, category: jewelCategory, weight: parseFloat(e.target.weight.value), imageUrl }]);
         e.target.reset(); setMetalType(''); setJewelCategory(''); setTagCode('');
-        alert("Jewelry Saved to Cloud!");
       } catch (error) { alert("Upload Failed."); }
       setIsUploading(false);
-    };
-
-    const deleteItem = (id) => {
-      if(window.confirm("Are you sure you want to delete this item?")) {
-        setJewelryStock(jewelryStock.filter(item => item.id !== id));
-      }
     };
 
     return (
@@ -144,58 +181,28 @@ export default function App() {
         <ModuleHeader title="Smart Jewelry Stock Master" icon={<Tag size={20} />} />
         <div className="grid md:grid-cols-3 gap-6">
           <div className="md:col-span-1 bg-white p-5 rounded-lg shadow-sm border border-gray-200">
-            <h3 className="font-semibold text-sm text-gray-800 mb-4">Add New Item</h3>
+            <h3 className="font-semibold text-sm mb-4">Add Item</h3>
             <form onSubmit={handleAddStock} className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600">Metal Type</label>
-                  <select value={metalType} onChange={(e) => setMetalType(e.target.value)} required className="w-full p-2 mt-1 text-sm border rounded-md outline-none">
-                    <option value="">-- Select --</option><option value="Gold">Gold</option><option value="Silver">Silver</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600">Category</label>
-                  <select value={jewelCategory} onChange={(e) => setJewelCategory(e.target.value)} required disabled={!metalType} className="w-full p-2 mt-1 text-sm border rounded-md disabled:bg-gray-100">
-                    <option value="">-- Select --</option><option value="Ring">Ring</option><option value="Bangle">Bangle</option><option value="Chain">Chain</option>
-                  </select>
-                </div>
+                <select value={metalType} onChange={(e)=>setMetalType(e.target.value)} required className="w-full p-2 text-sm border rounded"><option value="">Metal</option><option value="Gold">Gold</option><option value="Silver">Silver</option></select>
+                <select value={jewelCategory} onChange={(e)=>setJewelCategory(e.target.value)} required disabled={!metalType} className="w-full p-2 text-sm border rounded"><option value="">Category</option><option value="Ring">Ring</option><option value="Bangle">Bangle</option><option value="Chain">Chain</option></select>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600">Auto Tag / Code</label>
-                <input type="text" value={tagCode} onChange={(e) => setTagCode(e.target.value)} required className="w-full p-2 text-sm border rounded-md font-bold text-teal-700 bg-teal-50" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600">Gross Weight (grams)</label>
-                <input type="number" step="0.001" name="weight" placeholder="e.g. 12.500" required className="w-full p-2 mt-1 text-sm border rounded-md" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600">Upload Photo</label>
-                <input type="file" name="photo" accept="image/*" capture="environment" required className="w-full p-2 mt-1 text-sm border bg-gray-50 rounded-md" />
-              </div>
-              <button type="submit" disabled={isUploading} className="w-full text-white text-sm font-bold py-2.5 rounded-md bg-teal-600 hover:bg-teal-700">
-                {isUploading ? 'Saving...' : 'Save Item'}
-              </button>
+              <input type="text" value={tagCode} onChange={(e)=>setTagCode(e.target.value)} required className="w-full p-2 text-sm border rounded font-bold text-teal-700 bg-teal-50" placeholder="Auto Tag" />
+              <input type="number" step="0.001" name="weight" placeholder="Weight (g)" required className="w-full p-2 text-sm border rounded" />
+              <input type="file" name="photo" accept="image/*" capture="environment" required className="w-full p-2 text-sm border bg-gray-50 rounded" />
+              <button type="submit" disabled={isUploading} className="w-full bg-teal-600 text-white font-bold py-2 rounded">{isUploading ? 'Saving...' : 'Save Item'}</button>
             </form>
           </div>
-          
-          <div className="md:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-             <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                <span className="font-semibold text-sm text-gray-700">Click Item to Delete</span>
-                <span className="text-xs font-bold bg-teal-100 text-teal-800 px-3 py-1.5 rounded-full">Total Items: {jewelryStock.length}</span>
-             </div>
+          <div className="md:col-span-2 bg-white rounded-lg border overflow-hidden">
+             <div className="p-3 bg-gray-50 border-b font-bold text-sm">Live Stock ({jewelryStock.length})</div>
              <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-4 overflow-y-auto max-h-[500px]">
               {jewelryStock.slice().reverse().map(item => (
-                <div key={item.id} className="border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition relative group">
-                  <button onClick={() => deleteItem(item.id)} className="absolute top-2 right-2 p-1.5 bg-white rounded-full text-red-500 shadow hover:bg-red-50 opacity-90 z-10">
-                    <Trash2 size={14} />
-                  </button>
-                  <div className="h-32 bg-gray-100">
-                    <img src={item.imageUrl} alt={item.code} className="w-full h-full object-cover" />
-                  </div>
-                  <div className="p-2 bg-white text-center border-t border-gray-100">
-                    <div className="font-bold text-sm text-gray-900">{item.code}</div>
-                    <div className="text-xs font-medium text-orange-600">{item.metal} {item.category}</div>
-                    <div className="text-xs text-gray-500">{item.weight} g</div>
+                <div key={item.id} className="border rounded-lg overflow-hidden shadow-sm relative">
+                  <button onClick={() => setJewelryStock(jewelryStock.filter(i => i.id !== item.id))} className="absolute top-1 right-1 p-1 bg-white rounded-full text-red-500 shadow"><Trash2 size={14}/></button>
+                  <img src={item.imageUrl} className="w-full h-24 object-cover" alt="pic"/>
+                  <div className="p-2 text-center text-xs">
+                    <div className="font-bold">{item.code}</div>
+                    <div className="text-gray-500">{item.weight} g</div>
                   </div>
                 </div>
               ))}
@@ -206,116 +213,65 @@ export default function App() {
     );
   };
 
-  // NEW MODULE: BILLING & POS
   const renderBilling = () => {
     const handleAddToCart = (e) => {
       e.preventDefault();
       const item = jewelryStock.find(i => i.code.toUpperCase() === billingSearch.toUpperCase());
-      if (!item) return alert("Tag Code Not Found in Stock!");
-      if (cart.find(c => c.code === item.code)) return alert("Item already added to bill!");
+      if (!item) return alert("Tag Not Found!");
+      if (cart.find(c => c.code === item.code)) return alert("Already added!");
 
-      const rate = item.metal === 'Gold' ? goldRate : item.metal === 'Silver' ? silverRate : 0;
+      // Smart Rate Picker based on live rates & metal
+      let rate = 0;
+      if (item.metal === 'Gold') rate = liveRates.gold22; // Billing usually done on 22k
+      if (item.metal === 'Silver') rate = liveRates.silver;
+      
       const baseValue = item.weight * rate;
-      // Default Making charge (Can be edited later, e.g. 500 per gram for gold)
       const makingCharge = item.metal === 'Gold' ? item.weight * 500 : 500; 
 
       setCart([...cart, { ...item, rate, baseValue, makingCharge }]);
       setBillingSearch('');
     };
 
-    const updateMakingCharge = (code, newCharge) => {
-      setCart(cart.map(c => c.code === code ? { ...c, makingCharge: parseFloat(newCharge) || 0 } : c));
-    };
-
-    const removeCartItem = (code) => {
-      setCart(cart.filter(c => c.code !== code));
-    };
-
+    const updateMakingCharge = (code, val) => setCart(cart.map(c => c.code === code ? { ...c, makingCharge: parseFloat(val)||0 } : c));
     const totalItemValue = cart.reduce((sum, item) => sum + item.baseValue, 0);
     const totalMaking = cart.reduce((sum, item) => sum + item.makingCharge, 0);
-    const taxableValue = totalItemValue + totalMaking;
-    const gst = taxableValue * 0.03; // 3% GST
-    const grandTotal = taxableValue + gst;
+    const gst = (totalItemValue + totalMaking) * 0.03;
 
     return (
       <div className="p-6 max-w-7xl mx-auto">
-        <ModuleHeader title="Billing & POS Terminal" icon={<ShoppingCart size={20} />} />
-        
-        {/* Live Rates Bar */}
-        <div className="flex gap-6 mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-orange-800">Today Gold Rate (1g):</span>
-            <input type="number" value={goldRate} onChange={(e)=>setGoldRate(e.target.value)} className="w-24 p-1 text-sm border rounded font-bold text-gray-800 outline-none" />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-gray-600">Today Silver Rate (1g):</span>
-            <input type="number" value={silverRate} onChange={(e)=>setSilverRate(e.target.value)} className="w-24 p-1 text-sm border rounded font-bold text-gray-800 outline-none" />
-          </div>
-        </div>
-
+        <ModuleHeader title="Billing Terminal" icon={<ShoppingCart size={20} />} />
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Cart & Search Section */}
           <div className="lg:col-span-2 space-y-4">
             <form onSubmit={handleAddToCart} className="flex gap-2">
-              <input type="text" value={billingSearch} onChange={(e)=>setBillingSearch(e.target.value)} placeholder="Scan Barcode or Enter Tag Code (e.g. GLD-RNG-1001)" className="flex-1 p-3 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 uppercase" />
-              <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700">Add to Bill</button>
+              <input type="text" value={billingSearch} onChange={(e)=>setBillingSearch(e.target.value)} placeholder="Enter Tag (e.g. GLD-RNG-1001)" className="flex-1 p-3 border rounded-lg uppercase font-bold" />
+              <button type="submit" className="bg-blue-600 text-white px-6 rounded-lg font-bold">Add to Bill</button>
             </form>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-gray-50 border-b border-gray-100 text-xs text-gray-600">
-                  <tr>
-                    <th className="p-3">Item Details</th>
-                    <th className="p-3">Weight</th>
-                    <th className="p-3">Metal Value</th>
-                    <th className="p-3">Making (₹)</th>
-                    <th className="p-3">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm">
+            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 border-b"><tr><th className="p-3">Item</th><th className="p-3">Wt</th><th className="p-3">Value</th><th className="p-3">Making (₹)</th><th className="p-3">Del</th></tr></thead>
+                <tbody>
                   {cart.map(item => (
-                    <tr key={item.code} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="p-3 flex items-center gap-3">
-                        <img src={item.imageUrl} alt="img" className="w-10 h-10 rounded object-cover border" />
-                        <div><div className="font-bold text-gray-800">{item.code}</div><div className="text-xs text-gray-500">{item.category}</div></div>
-                      </td>
-                      <td className="p-3 font-medium">{item.weight} g</td>
-                      <td className="p-3 text-green-700 font-semibold">₹{item.baseValue.toLocaleString('en-IN')}</td>
-                      <td className="p-3">
-                        <input type="number" value={item.makingCharge} onChange={(e)=>updateMakingCharge(item.code, e.target.value)} className="w-20 p-1 border rounded text-sm text-center outline-none focus:border-blue-500" />
-                      </td>
-                      <td className="p-3">
-                        <button onClick={() => removeCartItem(item.code)} className="text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 size={16}/></button>
-                      </td>
+                    <tr key={item.code} className="border-b">
+                      <td className="p-3 font-bold text-gray-800">{item.code}</td>
+                      <td className="p-3">{item.weight}g</td>
+                      <td className="p-3 text-green-700 font-bold">₹{item.baseValue.toLocaleString('en-IN')}</td>
+                      <td className="p-3"><input type="number" value={item.makingCharge} onChange={(e)=>updateMakingCharge(item.code, e.target.value)} className="w-20 p-1 border rounded text-center" /></td>
+                      <td className="p-3"><button onClick={() => setCart(cart.filter(c => c.code !== item.code))} className="text-red-500"><Trash2 size={16}/></button></td>
                     </tr>
                   ))}
-                  {cart.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-gray-400">Cart is empty. Scan an item to start billing.</td></tr>}
                 </tbody>
               </table>
             </div>
           </div>
-
-          {/* Invoice Summary Section */}
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 h-fit">
-            <h3 className="font-bold text-lg text-gray-800 mb-4 border-b pb-2">Invoice Summary</h3>
-            <div className="space-y-3 text-sm text-gray-600">
-              <div className="flex justify-between"><span>Metal Value:</span> <span className="font-medium text-gray-900">₹{totalItemValue.toLocaleString('en-IN')}</span></div>
-              <div className="flex justify-between"><span>Making Charges:</span> <span className="font-medium text-gray-900">₹{totalMaking.toLocaleString('en-IN')}</span></div>
-              <div className="flex justify-between border-b pb-3"><span>GST (3%):</span> <span className="font-medium text-gray-900">₹{gst.toLocaleString('en-IN')}</span></div>
-              
-              <div className="flex justify-between text-xl font-bold text-gray-900 pt-2">
-                <span>Grand Total:</span> 
-                <span className="text-blue-700">₹{Math.round(grandTotal).toLocaleString('en-IN')}</span>
-              </div>
+          <div className="bg-white p-6 rounded-lg border">
+            <h3 className="font-bold text-lg border-b pb-2 mb-4">Invoice Summary</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span>Items Value:</span> <span>₹{totalItemValue.toLocaleString('en-IN')}</span></div>
+              <div className="flex justify-between"><span>Making:</span> <span>₹{totalMaking.toLocaleString('en-IN')}</span></div>
+              <div className="flex justify-between border-b pb-2"><span>GST (3%):</span> <span>₹{gst.toLocaleString('en-IN')}</span></div>
+              <div className="flex justify-between text-xl font-bold pt-2"><span>Total:</span> <span className="text-blue-700">₹{Math.round(totalItemValue+totalMaking+gst).toLocaleString('en-IN')}</span></div>
             </div>
-            
-            <div className="mt-6 space-y-3">
-              <input type="text" placeholder="Customer Name" className="w-full p-2 border rounded-md text-sm outline-none" />
-              <input type="text" placeholder="Mobile Number" className="w-full p-2 border rounded-md text-sm outline-none" />
-              <button className={`w-full py-3 rounded-lg font-bold text-white flex items-center justify-center gap-2 ${cart.length > 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300'}`} disabled={cart.length === 0}>
-                <Printer size={18} /> Generate Bill (Print)
-              </button>
-            </div>
+            <button className="w-full mt-6 bg-green-600 text-white font-bold py-3 rounded flex items-center justify-center gap-2"><Printer size={18}/> Print Bill</button>
           </div>
         </div>
       </div>
@@ -323,18 +279,15 @@ export default function App() {
   };
 
   const DashboardCard = ({ icon, title, desc, colorClass, onClick }) => (
-    <button onClick={onClick} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all text-left flex flex-col gap-3 group">
+    <button onClick={onClick} className="bg-white p-5 rounded-xl border shadow-sm hover:shadow-md transition-all text-left flex flex-col gap-3">
       <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClass}`}>{icon}</div>
-      <div>
-        <h3 className="font-semibold text-sm text-gray-900">{title}</h3>
-        <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
-      </div>
+      <div><h3 className="font-bold text-sm">{title}</h3><p className="text-xs text-gray-500">{desc}</p></div>
     </button>
   );
 
   if (currentView === 'login') return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-xl shadow-lg p-8 border">
+      <div className="w-full max-w-sm bg-white rounded-xl shadow p-8 border">
         <h1 className="text-2xl font-bold text-center text-orange-600 mb-6">SwarnaSetu Pro</h1>
         <form onSubmit={handleLogin} className="space-y-4">
           <input type="text" name="userid" required placeholder="User ID" className="w-full p-2 border rounded" />
@@ -347,15 +300,30 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans">
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center sticky top-0 z-10">
+      <header className="bg-white border-b px-6 py-3 flex justify-between items-center sticky top-0 z-20">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentView('dashboard')}>
           <Shield className="h-6 w-6 text-orange-600" />
-          <h1 className="text-base font-bold text-gray-900">SwarnaSetu <span className="text-orange-600">Pro</span></h1>
+          <h1 className="text-base font-bold">SwarnaSetu <span className="text-orange-600">Pro</span></h1>
         </div>
-        <button onClick={() => { setCurrentUser(null); setCurrentView('login'); }} className="text-gray-500 hover:text-red-600 text-sm font-medium">Logout</button>
+        <button onClick={() => { setCurrentUser(null); setCurrentView('login'); }} className="text-gray-500 hover:text-red-600 text-sm font-bold">Logout</button>
       </header>
+      
+      {/* 🔴 LIVE RATES TICKER BAR - VISIBLE TO EVERYONE EVERYWHERE 🔴 */}
+      <div className="bg-gradient-to-r from-yellow-100 to-amber-100 border-b border-yellow-300 px-4 py-2 flex items-center overflow-x-auto whitespace-nowrap shadow-sm">
+        <span className="text-xs font-black text-red-600 uppercase tracking-widest mr-4 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span> LIVE</span>
+        <div className="flex gap-6 text-xs font-bold text-yellow-900">
+          <span>24K: <span className="text-green-700">₹{liveRates.gold24}</span></span>
+          <span>22K: <span className="text-green-700">₹{liveRates.gold22}</span></span>
+          <span>18K: <span className="text-green-700">₹{liveRates.gold18}</span></span>
+          <span>Silver: <span className="text-blue-700">₹{liveRates.silver}</span></span>
+          <span>Gold Coin: <span className="text-gray-700">₹{liveRates.goldCoin}</span></span>
+          <span>Silver Coin: <span className="text-gray-700">₹{liveRates.silverCoin}</span></span>
+        </div>
+      </div>
+
       <main className="flex-1 overflow-auto">
         {currentView === 'dashboard' && renderDashboard()}
+        {currentView === 'rates' && renderLiveRates()}
         {currentView === 'stock' && renderJewelryStock()}
         {currentView === 'billing' && renderBilling()}
       </main>
