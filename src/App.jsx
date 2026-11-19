@@ -291,4 +291,131 @@ export default function App() {
                 <option value="Sick Leave">Sick Leave</option>
                 <option value="Half Day (First Half)">Half Day (First Half)</option>
               </select>
-              <button
+              <button type="submit" className="w-full bg-purple-600 text-white py-2 rounded-lg font-bold">Submit Request</button>
+            </form>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow border">
+            <h3 className="font-bold text-lg mb-4">My Leave Status</h3>
+            {leaves.filter(l => l.user === currentUser.name || currentUser.role === 'Admin').map(l => (
+              <div key={l.id} className="p-3 border-b last:border-0 flex justify-between items-center">
+                <div>
+                  <div className="font-bold">{l.user}</div>
+                  <div className="text-sm text-gray-600">{l.date} - {l.type}</div>
+                </div>
+                <span className="text-amber-600 font-bold text-sm bg-amber-100 px-2 py-1 rounded">{l.status}</span>
+              </div>
+            ))}
+            {leaves.length === 0 && <p className="text-gray-500">No leave history.</p>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCashDrawer = () => (
+    <div className="p-6">
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Cashier Note Denominations (Money Slots)</h2>
+      <div className="bg-white p-6 rounded-xl shadow border">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Object.entries(cashSlots).map(([note, count]) => (
+            <div key={note} className="p-4 bg-green-50 border border-green-200 rounded-xl text-center">
+              <div className="text-green-800 font-bold text-xl mb-2">{note === 'coins' ? 'Coins' : `₹${note}`}</div>
+              <div className="flex items-center justify-center gap-3">
+                <button onClick={() => setCashSlots({...cashSlots, [note]: Math.max(0, count - 1)})} className="bg-red-500 text-white w-8 h-8 rounded-full font-bold">-</button>
+                <span className="text-2xl font-bold w-12">{count}</span>
+                <button onClick={() => setCashSlots({...cashSlots, [note]: count + 1})} className="bg-green-500 text-white w-8 h-8 rounded-full font-bold">+</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-8 p-4 bg-gray-800 text-white rounded-xl flex justify-between items-center">
+          <div className="text-xl font-bold">Total Physical Cash in Drawer:</div>
+          <div className="text-3xl font-bold text-green-400">
+            ₹{Object.entries(cashSlots).reduce((total, [note, count]) => total + (note === 'coins' ? count : parseInt(note) * count), 0).toLocaleString('en-IN')}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderExport = () => (
+    <div className="p-6">
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Tally & Daily Excel Export</h2>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white p-8 rounded-xl shadow border text-center">
+          <Download className="mx-auto h-16 w-16 text-indigo-500 mb-4" />
+          <h3 className="text-xl font-bold mb-2">Daily 9-Sheet Excel Export</h3>
+          <p className="text-gray-600 mb-6">Exports Summary, GST, Inventory, Leaves, and Petty Cash.</p>
+          <button className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700">
+            Download .xls File
+          </button>
+        </div>
+        <div className="bg-white p-8 rounded-xl shadow border text-center">
+          <Settings className="mx-auto h-16 w-16 text-blue-500 mb-4" />
+          <h3 className="text-xl font-bold mb-2">TallyPrime Integration</h3>
+          <p className="text-gray-600 mb-6">Generate XML Vouchers or push directly to Port 9000.</p>
+          <div className="flex flex-col gap-3">
+            <button className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700">
+              Download Tally XML (Alt+O)
+            </button>
+            <button className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-green-700">
+              Live Push to Tally (Port 9000)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 5. Main App Layout routing
+  if (currentView === 'login') return renderLogin();
+
+  const DashboardCard = ({ icon, title, color, onClick }) => (
+    <button onClick={onClick} className={`${color} p-6 rounded-2xl shadow-lg text-white hover:scale-105 transition-transform flex flex-col items-center justify-center text-center gap-3`}>
+      <div className="p-3 bg-white/20 rounded-full">{icon}</div>
+      <span className="font-bold text-lg">{title}</span>
+    </button>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Top Navbar */}
+      <header className="bg-orange-600 text-white shadow-md px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentView('dashboard')}>
+          <Shield className="h-8 w-8 text-orange-200" />
+          <div>
+            <h1 className="text-xl font-bold leading-tight">SwarnaSetu Pro</h1>
+            <p className="text-xs text-orange-200">Jewellery POS • Logged in as: {currentUser?.name}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setCurrentView('dashboard')} className="hover:bg-orange-700 px-4 py-2 rounded-lg font-medium transition">
+            Module Hub
+          </button>
+          <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-bold shadow transition">
+            <LogOut size={18} /> Logout
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-auto">
+        {currentView === 'dashboard' && renderDashboard()}
+        {currentView === 'billing' && renderBilling()}
+        {currentView === 'walkin' && renderWalkin()}
+        {currentView === 'leave' && renderLeave()}
+        {currentView === 'store' && renderStore()}
+        {currentView === 'crm' && renderCRM()}
+        {currentView === 'cash' && renderCashDrawer()}
+        {currentView === 'export' && renderExport()}
+        {currentView === 'repairs' && (
+          <div className="p-6 text-center mt-20">
+            <PenTool className="mx-auto h-20 w-20 text-amber-400 mb-4" />
+            <h2 className="text-3xl font-bold text-gray-800">Karigar & Repairs Module</h2>
+            <p className="text-gray-500 mt-2">Active. Repair custody seamlessly transfers without triggering stock shortages.</p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
