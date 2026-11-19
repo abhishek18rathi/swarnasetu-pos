@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  MapPin, Calendar, FileSpreadsheet, UserPlus,
-  KeyRound, Download, Trash2, Save, X, UserCheck, CheckCircle2
+  MapPin, Calendar, FileSpreadsheet, Users, UserPlus,
+  KeyRound, Download, Trash2, Save, X, UserCheck, CheckCircle2, ArrowLeft, ChevronRight
 } from 'lucide-react';
 
 const PRIVILEGE_OPTIONS = [
@@ -33,8 +33,10 @@ export default function PayrollModule({
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [commissions, setCommissions] = useState({});
 
+  // Separate sub-views inside Staff Management: 'list' | 'add' | 'detail'
+  const [staffView, setStaffView] = useState('list');
   const [selectedStaffId, setSelectedStaffId] = useState(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [newPrivileges, setNewPrivileges] = useState({ sales_estimate: true });
   const [resetPwdInput, setResetPwdInput] = useState('');
 
@@ -45,6 +47,7 @@ export default function PayrollModule({
     setTimeout(() => setBannerMsg(''), 4000);
   };
 
+  // 1. MANDATORY FIRST LOGIN RESET + KYC PROFILE FORM
   if (currentUser?.isFirstLogin) {
     const handleOnboardingSubmit = (e) => {
       e.preventDefault();
@@ -213,13 +216,7 @@ export default function PayrollModule({
     });
   };
 
-  const openStaffEditor = (staffId) => {
-    setSelectedStaffId(staffId);
-    setResetPwdInput('');
-    setConfirmDeleteId(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
+  // Create New Staff -> Return to List View
   const handleCreateUser = (e) => {
     e.preventDefault();
     const f = e.target;
@@ -244,9 +241,11 @@ export default function PayrollModule({
     setStaffList([...staffList, newStaff]);
     f.reset();
     setNewPrivileges({ sales_estimate: true });
-    showBanner(`Account created for ${newStaff.name} (ID: ${id}).`);
+    setStaffView('list');
+    showBanner(`Employee "${newStaff.name}" added to list.`);
   };
 
+  // Modify Selected Staff
   const handleUpdateStaff = (e) => {
     e.preventDefault();
     if (!selectedStaff) return;
@@ -266,23 +265,16 @@ export default function PayrollModule({
       }
       return u;
     }));
-    showBanner(`Saved changes & privileges for ${f.editName.value.trim()}.`);
+    showBanner(`Saved updates for ${f.editName.value.trim()}.`);
   };
 
   const toggleSelectedUserPrivilege = (privKey) => {
     if (!selectedStaff) return;
-    setStaffList(staffList.map(u => {
-      if (u.id === selectedStaff.id) {
-        return {
-          ...u,
-          privileges: {
-            ...(u.privileges || {}),
-            [privKey]: !u.privileges?.[privKey]
-          }
-        };
-      }
-      return u;
-    }));
+    setStaffList(staffList.map(u =>
+      u.id === selectedStaff.id
+        ? { ...u, privileges: { ...(u.privileges || {}), [privKey]: !u.privileges?.[privKey] } }
+        : u
+    ));
   };
 
   const handleAdminResetPassword = () => {
@@ -300,12 +292,14 @@ export default function PayrollModule({
     showBanner(`Password reset to "${temp}" for ${selectedStaff.name}.`);
   };
 
-  const executeDeleteUser = (staffToDelete) => {
-    if (staffToDelete.id === 'sonu' || staffToDelete.id === currentUser.id) return;
-    setStaffList(staffList.filter(u => u.id !== staffToDelete.id));
-    if (selectedStaffId === staffToDelete.id) setSelectedStaffId(null);
-    setConfirmDeleteId(null);
-    showBanner(`Deleted user "${staffToDelete.name}".`);
+  const executeDeleteUser = () => {
+    if (!selectedStaff || selectedStaff.id === 'sonu' || selectedStaff.id === currentUser.id) return;
+    const deletedName = selectedStaff.name;
+    setStaffList(staffList.filter(u => u.id !== selectedStaff.id));
+    setSelectedStaffId(null);
+    setConfirmDelete(false);
+    setStaffView('list');
+    showBanner(`Deleted employee "${deletedName}".`);
   };
 
   const handleLeaveSubmit = (e) => {
@@ -363,12 +357,13 @@ export default function PayrollModule({
         </div>
       )}
 
+      {/* Main Module Navigation Pills */}
       <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs flex flex-wrap gap-1.5">
         {[
           { id: 'attendance', label: 'GPS Attendance', icon: MapPin },
           { id: 'leaves', label: 'Leave & Handover', icon: Calendar },
           ...(isAdmin ? [
-            { id: 'accounts', label: 'Staff & Privileges', icon: UserPlus },
+            { id: 'accounts', label: 'Regular Staff & New User', icon: Users },
             { id: 'salary', label: 'Salary & Excel', icon: FileSpreadsheet }
           ] : [])
         ].map(t => {
@@ -376,7 +371,7 @@ export default function PayrollModule({
           return (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => { setTab(t.id); if (t.id === 'accounts') setStaffView('list'); }}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
                 tab === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
               }`}
@@ -387,6 +382,7 @@ export default function PayrollModule({
         })}
       </div>
 
+      {/* TAB 1: GPS ATTENDANCE */}
       {tab === 'attendance' && (
         <div className="grid md:grid-cols-3 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
@@ -460,6 +456,7 @@ export default function PayrollModule({
         </div>
       )}
 
+      {/* TAB 2: 2-STEP LEAVE & DUTY HANDOVER */}
       {tab === 'leaves' && (
         <div className="grid md:grid-cols-3 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
@@ -543,281 +540,310 @@ export default function PayrollModule({
         </div>
       )}
 
+      {/* TAB 3: SEPARATED STAFF DIRECTORY LIST, ADD NEW USER & CLICK-INSIDE EDITOR */}
       {tab === 'accounts' && isAdmin && (
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
-            {!selectedStaff ? (
-              <>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-slate-900">Create New Staff Account</h3>
-                  <span className="text-[11px] text-slate-400">Select any staff card to edit or reset password</span>
+        <div>
+          {/* VIEW A: REGULAR EMPLOYEE LIST FORMAT */}
+          {staffView === 'list' && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Regular Employee List ({staffList.length})</h3>
+                  <p className="text-[11px] text-slate-500">Tap any employee row to open, modify privileges, reset password, or delete</p>
                 </div>
-                <form onSubmit={handleCreateUser} className="space-y-4 text-xs">
-                  <div className="grid sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Staff Name *</label>
-                      <input name="staffName" type="text" required placeholder="e.g. Deepak Soni" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Login ID *</label>
-                      <input name="userId" type="text" required placeholder="e.g. deepak01" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Temp Password *</label>
-                      <input name="tempPass" type="text" required placeholder="Temp@123" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Role</label>
-                      <select name="role" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                        <option value="Salesman">Salesman</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Cashier">Cashier</option>
-                        <option value="Admin">Admin</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Monthly Salary (₹)</label>
-                      <input name="baseSalary" type="number" required placeholder="25000" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Weekly Off Day</label>
-                      <select name="weeklyOff" defaultValue="Tuesday" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Commission (%)</label>
-                      <input name="commissionRate" type="number" step="0.1" defaultValue="0.5" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-2">Module Privileges (Tick to Allow)</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {PRIVILEGE_OPTIONS.map(p => (
-                        <label key={p.key} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200/80 hover:bg-slate-50 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={!!newPrivileges[p.key]}
-                            onChange={(e) => setNewPrivileges({ ...newPrivileges, [p.key]: e.target.checked })}
-                            className="rounded text-slate-900"
-                          />
-                          <span className="text-[11px] font-medium text-slate-700">{p.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg">
-                    Create Account
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div className="space-y-5 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <UserCheck size={18} className="text-amber-600" />
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">{selectedStaff.name}</h3>
-                      <p className="text-[11px] text-slate-500">User ID: <strong>{selectedStaff.id}</strong> • Current Password: <strong>{selectedStaff.pass}</strong></p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {selectedStaff.id !== 'sonu' && selectedStaff.id !== currentUser.id && (
-                      confirmDeleteId === selectedStaff.id ? (
-                        <div className="flex items-center gap-1.5 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200">
-                          <span className="text-[11px] font-bold text-red-700">Confirm?</span>
-                          <button type="button" onClick={() => executeDeleteUser(selectedStaff)} className="px-2 py-0.5 bg-red-600 text-white rounded text-[11px] font-bold">Yes</button>
-                          <button type="button" onClick={() => setConfirmDeleteId(null)} className="px-2 py-0.5 bg-white text-slate-700 border rounded text-[11px]">No</button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(selectedStaff.id)}
-                          className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded-lg inline-flex items-center gap-1"
-                        >
-                          <Trash2 size={13} /> Delete User
-                        </button>
-                      )
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedStaffId(null)}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg inline-flex items-center gap-1"
-                    >
-                      <X size={13} /> Close / New User
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200/70 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-bold text-slate-800">Admin Password Reset</div>
-                    <div className="text-[11px] text-slate-500">Sets a temporary password; user will set a new password on next login.</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={resetPwdInput}
-                      onChange={(e) => setResetPwdInput(e.target.value)}
-                      placeholder="New Temp Password"
-                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg w-40"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAdminResetPassword}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg inline-flex items-center gap-1"
-                    >
-                      <KeyRound size={13} /> Reset Password
-                    </button>
-                  </div>
-                </div>
-
-                <form key={selectedStaff.id} onSubmit={handleUpdateStaff} className="space-y-4">
-                  <div className="grid sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Staff Name</label>
-                      <input name="editName" type="text" defaultValue={selectedStaff.name} required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Role</label>
-                      <select name="editRole" defaultValue={selectedStaff.role} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                        <option value="Salesman">Salesman</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Cashier">Cashier</option>
-                        <option value="Admin">Admin</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Monthly Salary (₹)</label>
-                      <input name="editSalary" type="number" defaultValue={selectedStaff.baseSalary} required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Weekly Off</label>
-                      <select name="editWeeklyOff" defaultValue={selectedStaff.weeklyOff} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Commission (%)</label>
-                      <input name="editCommission" type="number" step="0.1" defaultValue={selectedStaff.commissionRate} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-2">Edit Module Privileges (Tick / Untick)</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {PRIVILEGE_OPTIONS.map(p => (
-                        <label key={p.key} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200/80 hover:bg-slate-50 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={!!selectedStaff.privileges?.[p.key]}
-                            onChange={() => toggleSelectedUserPrivilege(p.key)}
-                            className="rounded text-slate-900"
-                          />
-                          <span className="text-[11px] font-medium text-slate-700">{p.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
-                    <div className="font-bold text-slate-800 mb-2">Submitted Staff KYC & Bank Details</div>
-                    {selectedStaff.isFirstLogin ? (
-                      <p className="text-amber-700">User has not completed first-login KYC setup yet.</p>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600">
-                        <div>Father: <strong className="text-slate-900">{selectedStaff.profile?.fatherName || '-'}</strong></div>
-                        <div>Spouse: <strong className="text-slate-900">{selectedStaff.profile?.spouseName || '-'}</strong></div>
-                        <div>Mobile: <strong className="text-slate-900">{selectedStaff.profile?.mobile || '-'}</strong></div>
-                        <div>PAN: <strong className="text-slate-900">{selectedStaff.profile?.panNumber || '-'}</strong></div>
-                        <div>Govt ID: <strong className="text-slate-900">{selectedStaff.profile?.idNumber || '-'}</strong></div>
-                        <div>Bank: <strong className="text-slate-900">{selectedStaff.profile?.bankName || '-'}</strong></div>
-                        <div className="sm:col-span-2">A/C No: <strong className="text-slate-900">{selectedStaff.profile?.accountNo || '-'}</strong></div>
-                        <div>IFSC: <strong className="text-slate-900">{selectedStaff.profile?.ifsc || '-'}</strong></div>
-                      </div>
-                    )}
-                  </div>
-
-                  <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg inline-flex items-center gap-1.5">
-                    <Save size={14} /> Save Changes & Privileges
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">Registered Staff ({staffList.length})</h3>
-              {selectedStaff && (
                 <button
                   type="button"
-                  onClick={() => setSelectedStaffId(null)}
-                  className="text-[11px] font-semibold text-amber-700 hover:underline"
+                  onClick={() => { setNewPrivileges({ sales_estimate: true }); setStaffView('add'); }}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5"
                 >
-                  + Create New
+                  <UserPlus size={14} /> + Add New User
                 </button>
-              )}
-            </div>
+              </div>
 
-            <div className="space-y-2.5 max-h-[500px] overflow-y-auto">
-              {staffList.map(s => {
-                const isSelected = s.id === selectedStaffId;
-                return (
-                  <div
-                    key={s.id}
-                    className={`p-3 rounded-xl border text-xs transition-all ${
-                      isSelected ? 'border-amber-500 bg-amber-50/40 shadow-xs' : 'border-slate-200/80 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <div className="font-bold text-slate-900">{s.name}</div>
-                        <div className="text-slate-500 mt-0.5">ID: <strong>{s.id}</strong> • {s.role} • Off: {s.weeklyOff}</div>
-                      </div>
-                      <span className="font-bold text-amber-700">₹{s.baseSalary}/mo</span>
-                    </div>
-
-                    <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openStaffEditor(s.id)}
-                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-semibold rounded-md"
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
+                    <tr>
+                      <th className="p-3.5">Employee Name</th>
+                      <th className="p-3.5">Login ID</th>
+                      <th className="p-3.5">Role</th>
+                      <th className="p-3.5">Weekly Off</th>
+                      <th className="p-3.5">Salary</th>
+                      <th className="p-3.5">KYC Status</th>
+                      <th className="p-3.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {staffList.map(emp => (
+                      <tr
+                        key={emp.id}
+                        onClick={() => {
+                          setSelectedStaffId(emp.id);
+                          setResetPwdInput('');
+                          setConfirmDelete(false);
+                          setStaffView('detail');
+                        }}
+                        className="hover:bg-amber-50/50 cursor-pointer transition-colors"
                       >
-                        Open / Edit / Reset Pwd
-                      </button>
-
-                      {s.id !== 'sonu' && s.id !== currentUser.id && (
-                        confirmDeleteId === s.id ? (
-                          <div className="flex items-center gap-1">
-                            <button type="button" onClick={() => executeDeleteUser(s)} className="px-2 py-1 bg-red-600 text-white rounded text-[11px] font-bold">Confirm</button>
-                            <button type="button" onClick={() => setConfirmDeleteId(null)} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-[11px]">Cancel</button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(s.id)}
-                            className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-[11px] font-semibold rounded-md inline-flex items-center gap-1"
-                          >
-                            <Trash2 size={12} /> Delete
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                        <td className="p-3.5 font-bold text-slate-900">{emp.name}</td>
+                        <td className="p-3.5 text-slate-600 font-medium">{emp.id}</td>
+                        <td className="p-3.5">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                            {emp.role}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-slate-600">{emp.weeklyOff}</td>
+                        <td className="p-3.5 font-semibold text-slate-800">₹{emp.baseSalary.toLocaleString('en-IN')}</td>
+                        <td className="p-3.5">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            emp.isFirstLogin ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                          }`}>
+                            {emp.isFirstLogin ? 'Pending Setup' : `Verified (${emp.profile?.panNumber || 'KYC'})`}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-right">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700">
+                            Open <ChevronRight size={14} />
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* VIEW B: SEPARATE NEW USER ADDITION SCREEN */}
+          {staffView === 'add' && (
+            <div className="max-w-3xl mx-auto bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <UserPlus size={18} className="text-slate-800" />
+                  <h3 className="text-sm font-bold text-slate-900">Add New Staff Account</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStaffView('list')}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1"
+                >
+                  <ArrowLeft size={13} /> Back to Employee List
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateUser} className="space-y-4 text-xs">
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Staff Name *</label>
+                    <input name="staffName" type="text" required placeholder="e.g. Deepak Soni" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Login ID *</label>
+                    <input name="userId" type="text" required placeholder="e.g. deepak01" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Temp Password *</label>
+                    <input name="tempPass" type="text" required placeholder="Temp@123" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Role</label>
+                    <select name="role" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                      <option value="Salesman">Salesman</option>
+                      <option value="Manager">Manager</option>
+                      <option value="Cashier">Cashier</option>
+                      <option value="Admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Monthly Salary (₹)</label>
+                    <input name="baseSalary" type="number" required placeholder="25000" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Weekly Off Day</label>
+                    <select name="weeklyOff" defaultValue="Tuesday" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Commission (%)</label>
+                    <input name="commissionRate" type="number" step="0.1" defaultValue="0.5" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-2">Assign Module Privileges (Tick to Allow)</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {PRIVILEGE_OPTIONS.map(p => (
+                      <label key={p.key} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200/80 hover:bg-slate-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!newPrivileges[p.key]}
+                          onChange={(e) => setNewPrivileges({ ...newPrivileges, [p.key]: e.target.checked })}
+                          className="rounded text-slate-900"
+                        />
+                        <span className="text-[11px] font-medium text-slate-700">{p.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg">
+                    Save & Add Employee
+                  </button>
+                  <button type="button" onClick={() => setStaffView('list')} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* VIEW C: INSIDE SELECTED EMPLOYEE (MODIFY / PRIVILEGES / PASSWORD / DELETE) */}
+          {staffView === 'detail' && selectedStaff && (
+            <div className="max-w-4xl mx-auto bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => { setStaffView('list'); setSelectedStaffId(null); }}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg inline-flex items-center gap-1"
+                  >
+                    <ArrowLeft size={13} /> List
+                  </button>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      <UserCheck size={16} className="text-amber-600" /> {selectedStaff.name}
+                    </h3>
+                    <p className="text-[11px] text-slate-500">Login ID: <strong>{selectedStaff.id}</strong> • Current Password: <strong>{selectedStaff.pass}</strong></p>
+                  </div>
+                </div>
+
+                {selectedStaff.id !== 'sonu' && selectedStaff.id !== currentUser.id && (
+                  confirmDelete ? (
+                    <div className="flex items-center gap-1.5 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200">
+                      <span className="text-[11px] font-bold text-red-700">Delete permanently?</span>
+                      <button type="button" onClick={executeDeleteUser} className="px-2.5 py-0.5 bg-red-600 text-white rounded text-[11px] font-bold">Yes, Delete</button>
+                      <button type="button" onClick={() => setConfirmDelete(false)} className="px-2 py-0.5 bg-white text-slate-700 border rounded text-[11px]">Cancel</button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(true)}
+                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded-lg inline-flex items-center gap-1"
+                    >
+                      <Trash2 size={13} /> Delete Employee
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* Password Reset Box */}
+              <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200/70 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-800">Reset Employee Password</div>
+                  <div className="text-[11px] text-slate-500">Sets a temporary password; employee will set a new password on next login.</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={resetPwdInput}
+                    onChange={(e) => setResetPwdInput(e.target.value)}
+                    placeholder="New Temp Password"
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg w-40"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAdminResetPassword}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg inline-flex items-center gap-1"
+                  >
+                    <KeyRound size={13} /> Reset Password
+                  </button>
+                </div>
+              </div>
+
+              {/* Modify Details & Privileges */}
+              <form key={selectedStaff.id} onSubmit={handleUpdateStaff} className="space-y-4">
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Staff Name</label>
+                    <input name="editName" type="text" defaultValue={selectedStaff.name} required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Role</label>
+                    <select name="editRole" defaultValue={selectedStaff.role} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                      <option value="Salesman">Salesman</option>
+                      <option value="Manager">Manager</option>
+                      <option value="Cashier">Cashier</option>
+                      <option value="Admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Monthly Salary (₹)</label>
+                    <input name="editSalary" type="number" defaultValue={selectedStaff.baseSalary} required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Weekly Off</label>
+                    <select name="editWeeklyOff" defaultValue={selectedStaff.weeklyOff} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
+                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Commission (%)</label>
+                    <input name="editCommission" type="number" step="0.1" defaultValue={selectedStaff.commissionRate} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-2">Modify Privileges (Tick / Untick)</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {PRIVILEGE_OPTIONS.map(p => (
+                      <label key={p.key} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200/80 hover:bg-slate-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!selectedStaff.privileges?.[p.key]}
+                          onChange={() => toggleSelectedUserPrivilege(p.key)}
+                          className="rounded text-slate-900"
+                        />
+                        <span className="text-[11px] font-medium text-slate-700">{p.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Employee KYC & Bank Record */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                  <div className="font-bold text-slate-800 mb-2">Employee KYC & Bank Details</div>
+                  {selectedStaff.isFirstLogin ? (
+                    <p className="text-amber-700">Employee has not completed first-login KYC setup yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600">
+                      <div>Father: <strong className="text-slate-900">{selectedStaff.profile?.fatherName || '-'}</strong></div>
+                      <div>Spouse: <strong className="text-slate-900">{selectedStaff.profile?.spouseName || '-'}</strong></div>
+                      <div>Mobile: <strong className="text-slate-900">{selectedStaff.profile?.mobile || '-'}</strong></div>
+                      <div>PAN: <strong className="text-slate-900">{selectedStaff.profile?.panNumber || '-'}</strong></div>
+                      <div>Govt ID: <strong className="text-slate-900">{selectedStaff.profile?.idNumber || '-'}</strong></div>
+                      <div>Bank: <strong className="text-slate-900">{selectedStaff.profile?.bankName || '-'}</strong></div>
+                      <div className="sm:col-span-2">A/C No: <strong className="text-slate-900">{selectedStaff.profile?.accountNo || '-'}</strong></div>
+                      <div>IFSC: <strong className="text-slate-900">{selectedStaff.profile?.ifsc || '-'}</strong></div>
+                    </div>
+                  )}
+                </div>
+
+                <button type="submit" className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg inline-flex items-center gap-1.5">
+                  <Save size={14} /> Save Modifications
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       )}
 
+      {/* TAB 4: MONTHLY SALARY, COMMISSION & EXCEL EXPORT */}
       {tab === 'salary' && isAdmin && (
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
