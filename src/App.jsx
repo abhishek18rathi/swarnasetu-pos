@@ -9,6 +9,7 @@ import {
 import PayrollModule from './modules/PayrollModule';
 import InventoryModule from './modules/InventoryModule';
 import SalesBillingModule from './modules/SalesBillingModule';
+import KarigarMelterModule from './modules/KarigarMelterModule';
 
 const DEFAULT_ADMIN = {
   id: 'sonu', pass: '@4266@', name: 'Sonu (Master Admin)', role: 'Admin',
@@ -25,7 +26,7 @@ const MODULES = [
   { id: 'payroll', title: 'Payroll & HR', desc: 'Staff, Privileges, GPS & Salary', icon: Users, color: 'text-indigo-600 bg-indigo-50', ready: true },
   { id: 'inventory', title: 'Inventory & Vault', desc: 'AI Stock, Drafts & Night Audit', icon: Package, color: 'text-teal-600 bg-teal-50', ready: true },
   { id: 'billing', title: 'Sales & Billing', desc: 'Estimates, Discounts & GST Bill', icon: ShoppingCart, color: 'text-blue-600 bg-blue-50', ready: true },
-  { id: 'karigar', title: 'Karigar & Melter', desc: 'Gold Melting, Wastage & Repairs', icon: Hammer, color: 'text-amber-600 bg-amber-50', ready: false },
+  { id: 'karigar', title: 'Karigar & Melter', desc: 'Gold Melting, Wastage & Repairs', icon: Hammer, color: 'text-amber-600 bg-amber-50', ready: true },
   { id: 'crm', title: 'CRM & Udhaari', desc: 'Customer Khata & Advances', icon: BookOpen, color: 'text-emerald-600 bg-emerald-50', ready: false },
   { id: 'accounts', title: 'Accounts & Rojmel', desc: 'Daily Cash Drawer & Expenses', icon: Wallet, color: 'text-purple-600 bg-purple-50', ready: false },
   { id: 'barcode', title: 'Barcode & Tags', desc: 'Batch Thermal Tag Printing', icon: Printer, color: 'text-slate-700 bg-slate-100', ready: false },
@@ -56,6 +57,11 @@ export default function App() {
   const [estimates, setEstimates] = useState([]);
   const [invoices, setInvoices] = useState([]);
 
+  const [melterJobs, setMelterJobs] = useState([]);
+  const [karigarList, setKarigarList] = useState([]);
+  const [karigarLedger, setKarigarLedger] = useState([]);
+  const [repairJobs, setRepairJobs] = useState([]);
+
   useEffect(() => {
     const docRef = doc(db, 'swarnasetu_cloud', 'erp_master_v2');
     const unsub = onSnapshot(docRef, (snap) => {
@@ -71,6 +77,10 @@ export default function App() {
         if (d.nightAudits) setNightAudits(d.nightAudits);
         if (d.estimates) setEstimates(d.estimates);
         if (d.invoices) setInvoices(d.invoices);
+        if (d.melterJobs) setMelterJobs(d.melterJobs);
+        if (d.karigarList) setKarigarList(d.karigarList);
+        if (d.karigarLedger) setKarigarLedger(d.karigarLedger);
+        if (d.repairJobs) setRepairJobs(d.repairJobs);
       }
       setIsLoaded(true);
     });
@@ -288,7 +298,21 @@ export default function App() {
           />
         )}
 
-        {!['dashboard', 'payroll', 'inventory', 'billing', 'rates'].includes(activeModule) && (
+        {activeModule === 'karigar' && (
+          <KarigarMelterModule
+            currentUser={currentUser}
+            melterJobs={melterJobs}
+            setMelterJobs={(v) => { setMelterJobs(v); syncToCloud({ melterJobs: v }); }}
+            karigarList={karigarList}
+            setKarigarList={(v) => { setKarigarList(v); syncToCloud({ karigarList: v }); }}
+            karigarLedger={karigarLedger}
+            setKarigarLedger={(v) => { setKarigarLedger(v); syncToCloud({ karigarLedger: v }); }}
+            repairJobs={repairJobs}
+            setRepairJobs={(v) => { setRepairJobs(v); syncToCloud({ repairJobs: v }); }}
+          />
+        )}
+
+        {!['dashboard', 'payroll', 'inventory', 'billing', 'karigar', 'rates'].includes(activeModule) && (
           <div className="bg-white rounded-2xl border border-slate-200/80 p-10 text-center max-w-md mx-auto">
             <h3 className="text-sm font-bold text-slate-900 capitalize">{activeModule} Module</h3>
             <p className="text-xs text-slate-500 mt-1">Module slot ready. Say "Build {activeModule}" when you want to activate this file.</p>
