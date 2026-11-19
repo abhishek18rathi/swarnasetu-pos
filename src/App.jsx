@@ -14,20 +14,26 @@ export default function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
+  // New States for Auto Tag Generation
+  const [metalType, setMetalType] = useState('');
+  const [jewelCategory, setJewelCategory] = useState('');
+  const [tagCode, setTagCode] = useState('');
+
   const users = [
     { id: 'sonu', pass: '@4266@', name: 'Sonu (Master Admin)', role: 'Admin', auth: 'Full' },
     { id: 'owner', pass: 'Owner@4266', name: 'Seth Ji (Owner)', role: 'Admin', auth: 'Full' },
-    { id: 'mgr01', pass: '1234', name: 'Vikram Singh (Manager)', role: 'Manager', auth: 'Floor' }
+    { id: 'mgr01', pass: '1234', name: 'Vikram Singh (Manager)', role: 'Manager', auth: 'Floor' },
+    { id: 'cash01', pass: '1234', name: 'Deepak Soni (Cashier)', role: 'Cashier', auth: 'Billing' }
   ];
 
   const [walkins, setWalkins] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [jewelryStock, setJewelryStock] = useState([]); // New Live Stock
+  const [jewelryStock, setJewelryStock] = useState([]); 
   const [cashSlots, setCashSlots] = useState({
     500: 0, 200: 0, 100: 0, 50: 0, 20: 0, 10: 0, coins: 0
   });
 
-  // FIREBASE SYNC
+  // 1. FIREBASE DATA SYNC
   useEffect(() => {
     const docRef = doc(db, 'swarnasetu_cloud', 'main_store_data');
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -55,6 +61,34 @@ export default function App() {
     }, 1500); 
     return () => clearTimeout(saveTimer);
   }, [walkins, customers, jewelryStock, cashSlots, isDataLoaded]);
+
+  // 2. AUTO TAG GENERATION LOGIC
+  useEffect(() => {
+    if (metalType && jewelCategory) {
+      // Create Prefix (e.g., GLD-RNG-)
+      const mPrefix = metalType === 'Gold' ? 'GLD' : metalType === 'Silver' ? 'SLV' : metalType === 'Diamond' ? 'DMD' : '';
+      const cPrefix = jewelCategory === 'Ring' ? 'RNG' : jewelCategory === 'Bangle' ? 'BNG' : jewelCategory === 'Chain' ? 'CHN' : jewelCategory === 'Necklace' ? 'NCK' : jewelCategory === 'Earrings' ? 'EAR' : jewelCategory.substring(0,3).toUpperCase();
+      const prefix = `${mPrefix}-${cPrefix}-`;
+      
+      // Find all existing items with this prefix
+      const matchingItems = jewelryStock.filter(item => item.code && item.code.startsWith(prefix));
+      
+      if (matchingItems.length > 0) {
+        // Extract numbers and find the highest one
+        const maxNum = Math.max(...matchingItems.map(item => {
+          const num = parseInt(item.code.replace(prefix, ''));
+          return isNaN(num) ? 0 : num;
+        }));
+        setTagCode(`${prefix}${maxNum + 1}`);
+      } else {
+        // If it's the very first item of this type, start at 1001
+        setTagCode(`${prefix}1001`);
+      }
+    } else {
+      setTagCode(''); // Clear code if selections are empty
+    }
+  }, [metalType, jewelCategory, jewelryStock.length]); 
+  // Runs whenever metal/category changes OR a new item is saved
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -104,26 +138,33 @@ export default function App() {
     </div>
   );
 
-  // NEW MODULE: JEWELRY STOCK WITH PHOTO UPLOAD
   const renderJewelryStock = () => {
     const handleAddStock = async (e) => {
       e.preventDefault();
-      const code = e.target.code.value;
-      const category = e.target.category.value;
+      const code = tagCode; // Take the potentially user-edited code from state
       const weight = e.target.weight.value;
       const file = e.target.photo.files[0];
 
       if (!file) return alert("Please select a photo!");
+      if (!code) return alert("Tag code cannot be empty!");
       
       setIsUploading(true);
       try {
+        // Save to Firebase Storage
         const imageRef = ref(storage, `jewelry_pics/${code}_${Date.now()}`);
         await uploadBytes(imageRef, file);
         const imageUrl = await getDownloadURL(imageRef);
 
-        const newItem = { id: Date.now(), code, category, weight, imageUrl };
+        // Save to Database
+        const newItem = { id: Date.now(), code, metal: metalType, category: jewelCategory, weight, imageUrl };
         setJewelryStock([...jewelryStock, newItem]);
+        
+        // Reset form completely
         e.target.reset();
+        setMetalType('');
+        setJewelCategory('');
+        setTagCode('');
+        
         alert("Jewelry Item Saved with Photo!");
       } catch (error) {
         alert("Upload Failed. Check internet connection.");
@@ -133,58 +174,84 @@ export default function App() {
 
     return (
       <div className="p-6 max-w-6xl mx-auto">
-        <ModuleHeader title="Jewelry Stock Master" icon={<Tag size={20} />} />
+        <ModuleHeader title="Smart Jewelry Stock Master" icon={<Tag size={20} />} />
         <div className="grid md:grid-cols-3 gap-6">
           <div className="md:col-span-1 bg-white p-5 rounded-lg shadow-sm border border-gray-200">
             <h3 className="font-semibold text-sm text-gray-800 mb-4">Add New Item</h3>
-            <form onSubmit={handleAddStock} className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-gray-600">Item Tag / Code</label>
-                <input type="text" name="code" placeholder="e.g. RNG-101" required className="w-full p-2 text-sm border rounded-md" />
+            <form onSubmit={handleAddStock} className="space-y-4">
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">1. Metal Type</label>
+                  <select value={metalType} onChange={(e) => setMetalType(e.target.value)} required className="w-full p-2 mt-1 text-sm border rounded-md outline-none focus:border-teal-500">
+                    <option value="">-- Select --</option>
+                    <option value="Gold">Gold</option>
+                    <option value="Silver">Silver</option>
+                    <option value="Diamond">Diamond</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">2. Jewelry Type</label>
+                  <select value={jewelCategory} onChange={(e) => setJewelCategory(e.target.value)} required disabled={!metalType} className="w-full p-2 mt-1 text-sm border rounded-md outline-none focus:border-teal-500 disabled:bg-gray-100">
+                    <option value="">-- Select --</option>
+                    <option value="Ring">Ring</option>
+                    <option value="Bangle">Bangle</option>
+                    <option value="Chain">Chain</option>
+                    <option value="Necklace">Necklace</option>
+                    <option value="Earrings">Earrings</option>
+                  </select>
+                </div>
               </div>
+
               <div>
-                <label className="text-xs font-semibold text-gray-600">Category</label>
-                <select name="category" required className="w-full p-2 text-sm border rounded-md">
-                  <option value="">Select Category</option>
-                  <option value="Ring">Ring (अंगूठी)</option>
-                  <option value="Bangle">Bangle (चूड़ी/कंगन)</option>
-                  <option value="Chain">Chain (चेन)</option>
-                  <option value="Necklace">Necklace (हार)</option>
-                  <option value="Earrings">Earrings (बाली)</option>
-                </select>
+                <label className="text-xs font-semibold text-gray-600">3. Auto Item Tag / Code</label>
+                <div className="text-[10px] text-gray-400 mb-1">You can change the starting number manually if you want.</div>
+                <input 
+                  type="text" 
+                  name="code" 
+                  value={tagCode} 
+                  onChange={(e) => setTagCode(e.target.value)} 
+                  placeholder="Select Metal & Type first..." 
+                  required 
+                  className="w-full p-2 text-sm border rounded-md font-bold text-teal-700 bg-teal-50 outline-none focus:ring-2 focus:ring-teal-500" 
+                />
               </div>
+
               <div>
-                <label className="text-xs font-semibold text-gray-600">Gross Weight (grams)</label>
-                <input type="number" step="0.001" name="weight" placeholder="e.g. 12.500" required className="w-full p-2 text-sm border rounded-md" />
+                <label className="text-xs font-semibold text-gray-600">4. Gross Weight (grams)</label>
+                <input type="number" step="0.001" name="weight" placeholder="e.g. 12.500" required className="w-full p-2 mt-1 text-sm border rounded-md outline-none focus:border-teal-500" />
               </div>
+
               <div>
-                <label className="text-xs font-semibold text-gray-600">Upload Photo (Click to open Camera)</label>
-                <input type="file" name="photo" accept="image/*" capture="environment" required className="w-full p-2 text-sm border rounded-md bg-gray-50" />
+                <label className="text-xs font-semibold text-gray-600">5. Upload Photo</label>
+                <input type="file" name="photo" accept="image/*" capture="environment" required className="w-full p-2 mt-1 text-sm border rounded-md bg-gray-50" />
               </div>
-              <button type="submit" disabled={isUploading} className={`w-full text-white text-sm font-medium py-2 rounded-md transition-colors ${isUploading ? 'bg-gray-400' : 'bg-teal-600 hover:bg-teal-700'}`}>
-                {isUploading ? 'Uploading Photo...' : 'Save Item & Photo'}
+
+              <button type="submit" disabled={isUploading} className={`w-full text-white text-sm font-bold py-2.5 rounded-md transition-colors shadow-sm ${isUploading ? 'bg-gray-400' : 'bg-teal-600 hover:bg-teal-700'}`}>
+                {isUploading ? 'Uploading & Saving...' : 'Save Item & Photo'}
               </button>
             </form>
           </div>
           
           <div className="md:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-             <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex justify-between">
-                <span className="font-semibold text-sm text-gray-700">Live Gallery</span>
-                <span className="text-xs font-bold bg-teal-100 text-teal-800 px-2 py-1 rounded">Total: {jewelryStock.length}</span>
+             <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                <span className="font-semibold text-sm text-gray-700">Live Inventory Gallery</span>
+                <span className="text-xs font-bold bg-teal-100 text-teal-800 px-3 py-1.5 rounded-full shadow-inner">Total Items: {jewelryStock.length}</span>
              </div>
              <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-4 overflow-y-auto max-h-[500px]">
-              {jewelryStock.map(item => (
+              {jewelryStock.slice().reverse().map(item => (
                 <div key={item.id} className="border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition">
-                  <div className="h-32 bg-gray-100 relative">
+                  <div className="h-32 bg-gray-100 relative group">
                     <img src={item.imageUrl} alt={item.code} className="w-full h-full object-cover" />
                   </div>
-                  <div className="p-2 bg-white">
+                  <div className="p-2 bg-white text-center border-t border-gray-100">
                     <div className="font-bold text-sm text-gray-900">{item.code}</div>
-                    <div className="text-xs text-gray-500">{item.category} • {item.weight}g</div>
+                    <div className="text-xs font-medium text-orange-600">{item.metal} {item.category}</div>
+                    <div className="text-xs text-gray-500">{item.weight} g</div>
                   </div>
                 </div>
               ))}
-              {jewelryStock.length === 0 && <p className="col-span-3 p-6 text-sm text-center text-gray-400">No jewelry items added yet.</p>}
+              {jewelryStock.length === 0 && <p className="col-span-3 p-12 text-sm text-center text-gray-400">Your smart inventory is empty. Add items to see them here.</p>}
             </div>
           </div>
         </div>
