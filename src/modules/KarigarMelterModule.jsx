@@ -1,962 +1,595 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
-  Flame, Hammer, Wrench, CheckCircle2, X,
-  Printer, UserPlus, Sparkles
+  Package, Plus, Printer, CheckCircle2, Trash2, Edit3,
+  UserCheck, ClipboardCheck, Sparkles, Search, Save, X, Layers, Wrench
 } from 'lucide-react';
 
-export default function KarigarMelterModule({
-  currentUser,
-  inventoryItems = [],
-  setInventoryItems,
-  melterJobs = [],
-  setMelterJobs,
-  karigarList = [],
-  setKarigarList,
-  karigarLedger = [],
-  setKarigarLedger,
-  repairJobs = [],
-  setRepairJobs
+const DEFAULT_TYPES = {
+  Gold: ['Ring', 'Bangle', 'Chain', 'Necklace', 'Earrings', 'Mangalsutra', 'Bracelet', 'Pendant', 'Nose Pin', 'Tikka'],
+  Silver: ['Payal (Anklet)', 'Bichiya (Toe Ring)', 'Ring', 'Chain', 'Bracelet', 'Murti / Idol', 'Bartaan / Utensil', 'Coin'],
+  'Gold-Diamond': ['Solitaire Ring', 'Diamond Necklace', 'Diamond Earrings', 'Diamond Bangle', 'Diamond Pendant', 'Diamond Bracelet', 'Nose Pin']
+};
+
+const STUDIO_BACKDROPS = {
+  Gold: { label: 'Royal Maroon Velvet', bg: '#4a0e17', border: '#d4af37' },
+  Silver: { label: 'Midnight Navy Velvet', bg: '#0f172a', border: '#cbd5e1' },
+  'Gold-Diamond': { label: 'Pearl Ivory Studio', bg: '#f8fafc', border: '#94a3b8' }
+};
+
+const QUICK_AMEND_TAGS = [
+  'Size Increase/Decrease', 'Length Adjust (+/-)', 'Lock / Kunda Change',
+  'Rhodium / Matte Polish', 'Moti / Drops / Stone Work', 'Name Engraving'
+];
+
+function dataUrlToBlob(dataUrl) {
+  const parts = dataUrl.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const bstr = atob(parts[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new Blob([u8arr], { type: mime });
+}
+
+export default function InventoryModule({
+  currentUser, staffList = [], karigarList = [],
+  inventoryItems = [], setInventoryItems,
+  customJewelTypes = { Gold: [], Silver: [], 'Gold-Diamond': [] }, setCustomJewelTypes,
+  nightAudits = [], setNightAudits
 }) {
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.privileges?.payroll_admin;
-  const hasAccess = isAdmin || !!currentUser?.privileges?.karigar_melter;
+  const canCreate = isAdmin || !!currentUser?.privileges?.inv_create;
+  const canModify = isAdmin || !!currentUser?.privileges?.inv_modify;
+  const canDelete = isAdmin || !!currentUser?.privileges?.inv_delete;
 
-  const [tab, setTab] = useState('melter');
+  const [tab, setTab] = useState(canCreate ? 'entry' : 'vault');
+  const [entryMode, setEntryMode] = useState('single');
   const [banner, setBanner] = useState('');
 
-  // Melter Return Form State
-  const [returningMeltId, setReturningMeltId] = useState(null);
-  const [sillyWtInput, setSillyWtInput] = useState('');
-  const [purityInput, setPurityInput] = useState('91.6');
+  const [material, setMaterial] = useState('Gold');
+  const [jewelType, setJewelType] = useState('Ring');
+  const [newTypeInput, setNewTypeInput] = useState('');
+  const [showAddType, setShowAddType] = useState(false);
 
-  // Karigar Ledger Sub-mode
-  const [karigarSubTab, setKarigarSubTab] = useState('issue');
-  const [selectedKarigarFilter, setSelectedKarigarFilter] = useState('All');
+  const [tagCode, setTagCode] = useState('');
+  const [grossWeight, setGrossWeight] = useState('');
+  const [netWeight, setNetWeight] = useState('');
+  const [diamondCarat, setDiamondCarat] = useState('');
+  const [makingMode, setMakingMode] = useState('percent');
+  const [makingValue, setMakingValue] = useState('12');
 
-  // Printable Customer Repair Receipt Modal
-  const [printRepairSlip, setPrintRepairSlip] = useState(null);
+  const [rawImageFile, setRawImageFile] = useState(null);
+  const [processedPreview, setProcessedPreview] = useState('');
+  const [aiBackdropOn, setAiBackdropOn] = useState(true);
+  const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Stock Amendment Return States (For ALL Jewelry Types)
-  const [completingAlterId, setCompletingAlterId] = useState(null);
-  const [newGrossInput, setNewGrossInput] = useState('');
-  const [newNetInput, setNewNetInput] = useState('');
-  const [alterPurityInput, setAlterPurityInput] = useState('91.6');
-  const [alterLaborInput, setAlterLaborInput] = useState('150');
-  const [metalSourceMode, setMetalSourceMode] = useState('karigar'); // 'karigar' | 'showroom'
+  const [batchRows, setBatchRows] = useState([1, 2, 3, 4].map(k => ({ key: k, grossWeight: '', netWeight: '', makingValue: '12', preview: '' })));
+  const [selectedDraftIds, setSelectedDraftIds] = useState([]);
+  const [printBatchItems, setPrintBatchItems] = useState([]);
 
-  const showBanner = (msg) => {
-    setBanner(msg);
-    setTimeout(() => setBanner(''), 5000);
-  };
+  const [filterMaterial, setFilterMaterial] = useState('All');
+  const [filterType, setFilterType] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingItem, setEditingItem] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
-  if (!hasAccess) {
-    return (
-      <div className="bg-white p-8 rounded-2xl border border-slate-200/80 text-center max-w-md mx-auto text-xs">
-        <h3 className="text-sm font-bold text-slate-900">Access Restricted</h3>
-        <p className="text-slate-500 mt-1">Ask Admin to enable "Karigar & Melter Access" in Payroll privileges.</p>
-      </div>
-    );
-  }
+  const [alteringItem, setAlteringItem] = useState(null);
+  const [amendInstruction, setAmendInstruction] = useState('');
+  const [printAmendSlip, setPrintAmendSlip] = useState(null);
 
-  // 1. MELTER (GALAAI & SILLY) HANDLERS
-  const handleSendToMelter = (e) => {
-    e.preventDefault();
-    const f = e.target;
-    const oldWt = parseFloat(f.oldWeight.value) || 0;
-    if (oldWt <= 0) return;
+  const [selectedHandoverStaff, setSelectedHandoverStaff] = useState('');
+  const [auditMaterial, setAuditMaterial] = useState('Gold');
+  const [physicalCountInput, setPhysicalCountInput] = useState('');
+  const [auditRemarks, setAuditRemarks] = useState('');
 
-    const newJob = {
-      id: Date.now(),
-      lotNo: `MLT-${String(melterJobs.length + 101)}`,
-      dateOut: new Date().toISOString().slice(0, 10),
-      melterName: f.melterName.value.trim(),
-      metal: f.metal.value,
-      sourceRef: f.sourceRef.value.trim() || 'Old Customer Exchange',
-      oldWeight: oldWt,
-      status: 'melting',
-      sillyWeight: 0,
-      purityPercent: 0,
-      meltingLoss: 0,
-      fineWeight: 0,
-      dateReturned: ''
-    };
+  const showBanner = (msg) => { setBanner(msg); setTimeout(() => setBanner(''), 4000); };
 
-    setMelterJobs([newJob, ...melterJobs]);
-    f.reset();
-    showBanner(`Lot ${newJob.lotNo} (${oldWt}g) sent to Melter ${newJob.melterName}.`);
-  };
+  const availableTypes = [
+    ...(DEFAULT_TYPES[material] || []),
+    ...((customJewelTypes && customJewelTypes[material]) || [])
+  ];
 
-  const handleCompleteSillyReturn = (job) => {
-    const sillyWt = parseFloat(sillyWtInput);
-    const purity = parseFloat(purityInput);
-    if (isNaN(sillyWt) || sillyWt <= 0 || isNaN(purity) || purity <= 0 || purity > 100) {
-      showBanner('Enter valid Silly weight and Purity % (1 to 100).');
-      return;
+  useEffect(() => {
+    if (!material || !jewelType) return;
+    const mCode = material === 'Gold' ? 'GLD' : material === 'Silver' ? 'SLV' : 'DMD';
+    const tCode = jewelType.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'ITM';
+    const prefix = `${mCode}-${tCode}-`;
+    const existing = inventoryItems.filter(i => i.code && i.code.startsWith(prefix));
+    if (existing.length > 0) {
+      const maxNum = Math.max(...existing.map(i => parseInt(i.code.replace(prefix, ''), 10) || 1000));
+      setTagCode(`${prefix}${maxNum + 1}`);
+    } else {
+      setTagCode(`${prefix}1001`);
     }
+  }, [material, jewelType, inventoryItems.length]);
 
-    const loss = Math.round((job.oldWeight - sillyWt) * 1000) / 1000;
-    const fine = Math.round(sillyWt * (purity / 100) * 1000) / 1000;
-
-    setMelterJobs(melterJobs.map(m =>
-      m.id === job.id
-        ? { ...m, status: 'completed', sillyWeight: sillyWt, purityPercent: purity, meltingLoss: loss, fineWeight: fine, dateReturned: new Date().toISOString().slice(0, 10) }
-        : m
-    ));
-
-    setReturningMeltId(null);
-    setSillyWtInput('');
-    showBanner(`Silly recorded for ${job.lotNo}! Fine ${job.metal}: ${fine}g (Loss: ${loss}g).`);
+  const getBatchRowCode = (baseCode, index) => {
+    const clean = (baseCode || '').trim().toUpperCase();
+    const match = clean.match(/^(.*?)(\d+)$/);
+    if (!match) return `${clean}-${index + 1}`;
+    return `${match[1]}${String(parseInt(match[2], 10) + index).padStart(match[2].length, '0')}`;
   };
 
-  // 2. KARIGAR MANAGEMENT & LEDGER HANDLERS
-  const handleAddKarigar = (e) => {
-    e.preventDefault();
-    const f = e.target;
-    const name = f.kName.value.trim();
-    if (!name) return;
-
-    const newK = {
-      id: `KRG-${Date.now()}`,
-      name,
-      mobile: f.kMobile.value.trim(),
-      specialty: f.kSpecialty.value.trim() || 'Gold & Diamond Work'
+  const optimizeImageToDataUrl = (file, selectedMat, useBackdrop) => new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 380; canvas.height = 380;
+        const ctx = canvas.getContext('2d');
+        const theme = STUDIO_BACKDROPS[selectedMat] || STUDIO_BACKDROPS.Gold;
+        if (useBackdrop) {
+          ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, 380, 380);
+          ctx.strokeStyle = theme.border; ctx.lineWidth = 8; ctx.strokeRect(10, 10, 360, 360);
+          const scale = Math.min(324 / img.width, 324 / img.height);
+          ctx.drawImage(img, (380 - img.width * scale) / 2, (380 - img.height * scale) / 2, img.width * scale, img.height * scale);
+        } else {
+          const scale = Math.min(380 / img.width, 380 / img.height);
+          ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 380, 380);
+          ctx.drawImage(img, (380 - img.width * scale) / 2, (380 - img.height * scale) / 2, img.width * scale, img.height * scale);
+        }
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = ev.target.result;
     };
-    setKarigarList([...karigarList, newK]);
-    f.reset();
-    showBanner(`Karigar "${name}" added.`);
+    reader.readAsDataURL(file);
+  });
+
+  const createPlaceholderCard = (code, selectedMat, typeName) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 320;
+    const ctx = canvas.getContext('2d');
+    const theme = STUDIO_BACKDROPS[selectedMat] || STUDIO_BACKDROPS.Gold;
+    ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, 320, 320);
+    ctx.strokeStyle = theme.border; ctx.lineWidth = 8; ctx.strokeRect(10, 10, 300, 300);
+    ctx.fillStyle = selectedMat === 'Gold-Diamond' ? '#0f172a' : '#ffffff';
+    ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(code, 160, 152);
+    ctx.font = '13px sans-serif';
+    ctx.fillText(`${selectedMat} • ${typeName}`, 160, 178);
+    return canvas.toDataURL('image/jpeg', 0.75);
   };
 
-  const handleIssueMetalToKarigar = (e) => {
+  const processSinglePhoto = async (file, selectedMat, useBackdrop) => {
+    if (!file) return;
+    setIsProcessingImg(true);
+    setProcessedPreview(await optimizeImageToDataUrl(file, selectedMat, useBackdrop));
+    setIsProcessingImg(false);
+  };
+
+  const uploadToCloud = async (dataUrl, code) => {
+    try {
+      const storageRef = ref(storage, `swarnasetu_inventory/${code}_${Date.now()}.jpg`);
+      await uploadBytes(storageRef, dataUrlToBlob(dataUrl));
+      return await getDownloadURL(storageRef);
+    } catch { return dataUrl; }
+  };
+
+  const handleSaveToDraft = async (e) => {
     e.preventDefault();
-    const f = e.target;
-    const kId = f.karigarId.value;
-    const karigar = karigarList.find(k => k.id === kId);
-    if (!karigar) return showBanner('Please select a Karigar first.');
+    if (!canCreate || !processedPreview) return showBanner('Capture or select a jewelry photo first.');
+    const cleanCode = tagCode.trim().toUpperCase();
+    if (inventoryItems.some(i => i.code.toUpperCase() === cleanCode)) return showBanner(`Tag "${cleanCode}" already exists!`);
 
-    const rawWt = parseFloat(f.issueWt.value) || 0;
-    const purity = parseFloat(f.issuePurity.value) || 100;
-    const fineWt = Math.round(rawWt * (purity / 100) * 1000) / 1000;
-
-    const entry = {
-      id: Date.now(),
-      date: new Date().toISOString().slice(0, 10),
-      type: 'issue',
-      karigarId: karigar.id,
-      karigarName: karigar.name,
-      metal: f.metal.value,
-      description: f.description.value.trim() || 'New Ornament Order',
-      rawWeight: rawWt,
-      purityPercent: purity,
-      wastagePercent: 0,
-      fineWeight: fineWt,
-      laborCharge: 0
-    };
-
-    setKarigarLedger([entry, ...karigarLedger]);
-    f.reset();
-    showBanner(`Issued ${fineWt}g Fine ${entry.metal} to ${karigar.name}.`);
+    setIsSaving(true);
+    const url = await uploadToCloud(processedPreview, cleanCode);
+    setInventoryItems([{
+      id: Date.now(), code: cleanCode, material, type: jewelType,
+      grossWeight: parseFloat(grossWeight) || 0,
+      netWeight: parseFloat(netWeight) || parseFloat(grossWeight) || 0,
+      diamondCarat: material === 'Gold-Diamond' ? (parseFloat(diamondCarat) || 0) : 0,
+      makingMode, makingValue: parseFloat(makingValue) || 0,
+      imageUrl: url, status: 'draft', assignedTo: null, assignedToName: '',
+      createdBy: currentUser.name, createdAt: new Date().toISOString().slice(0, 10)
+    }, ...inventoryItems]);
+    setGrossWeight(''); setNetWeight(''); setDiamondCarat(''); setRawImageFile(null); setProcessedPreview('');
+    setIsSaving(false);
+    showBanner(`Saved "${cleanCode}" to Drafts!`);
   };
 
-  const handleReceiveFromKarigar = (e) => {
+  const handleSaveBatchToDraft = async (e) => {
     e.preventDefault();
-    const f = e.target;
-    const kId = f.karigarId.value;
-    const karigar = karigarList.find(k => k.id === kId);
-    if (!karigar) return showBanner('Please select a Karigar first.');
+    if (!canCreate) return;
+    const valid = batchRows.map((r, idx) => ({ ...r, computedCode: getBatchRowCode(tagCode, idx) })).filter(r => parseFloat(r.grossWeight) > 0);
+    if (!valid.length) return showBanner('Enter Gross Weight for at least 1 row.');
+    const existingSet = new Set(inventoryItems.map(i => i.code.toUpperCase()));
+    const dup = valid.find(v => existingSet.has(v.computedCode));
+    if (dup) return showBanner(`Duplicate tag "${dup.computedCode}"!`);
 
-    const ornamentWt = parseFloat(f.ornamentWt.value) || 0;
-    const touchPct = parseFloat(f.touchPct.value) || 91.6;
-    const wastagePct = parseFloat(f.wastagePct.value) || 0;
-    const laborRs = parseFloat(f.laborCharge.value) || 0;
-    const fineAccounted = Math.round(ornamentWt * ((touchPct + wastagePct) / 100) * 1000) / 1000;
-
-    const entry = {
-      id: Date.now(),
-      date: new Date().toISOString().slice(0, 10),
-      type: 'receive',
-      karigarId: karigar.id,
-      karigarName: karigar.name,
-      metal: f.metal.value,
-      description: f.description.value.trim() || 'Finished Ornament',
-      rawWeight: ornamentWt,
-      purityPercent: touchPct,
-      wastagePercent: wastagePct,
-      fineWeight: fineAccounted,
-      laborCharge: laborRs
-    };
-
-    setKarigarLedger([entry, ...karigarLedger]);
-    f.reset();
-    showBanner(`Received ${ornamentWt}g from ${karigar.name} (Fine Accounted: ${fineAccounted}g, Labor: ₹${laborRs}).`);
+    setIsSaving(true);
+    const batch = [];
+    const base = Date.now();
+    for (let i = 0; i < valid.length; i++) {
+      const r = valid[i];
+      const img = r.preview || createPlaceholderCard(r.computedCode, material, jewelType);
+      const url = await uploadToCloud(img, r.computedCode);
+      batch.push({
+        id: base + i, code: r.computedCode, material, type: jewelType,
+        grossWeight: parseFloat(r.grossWeight) || 0,
+        netWeight: parseFloat(r.netWeight) || parseFloat(r.grossWeight) || 0,
+        diamondCarat: 0, makingMode, makingValue: parseFloat(r.makingValue) || parseFloat(makingValue) || 0,
+        imageUrl: url, status: 'draft', assignedTo: null, assignedToName: '',
+        createdBy: currentUser.name, createdAt: new Date().toISOString().slice(0, 10)
+      });
+    }
+    setInventoryItems([...batch.reverse(), ...inventoryItems]);
+    setBatchRows([1, 2, 3, 4].map(k => ({ key: Date.now() + k, grossWeight: '', netWeight: '', makingValue, preview: '' })));
+    setIsSaving(false);
+    showBanner(`Saved ${batch.length} items to Drafts!`);
   };
 
-  const getKarigarSummary = (kId, metalType) => {
-    const entries = karigarLedger.filter(e => e.karigarId === kId && e.metal === metalType);
-    const issued = entries.filter(e => e.type === 'issue').reduce((s, e) => s + Number(e.fineWeight || 0), 0);
-    const accounted = entries.filter(e => e.type === 'receive').reduce((s, e) => s + Number(e.fineWeight || 0), 0);
-    const labor = entries.filter(e => e.type === 'receive').reduce((s, e) => s + Number(e.laborCharge || 0), 0);
-    return {
-      fineBalance: Math.round((issued - accounted) * 1000) / 1000,
-      totalLabor: Math.round(labor)
-    };
-  };
-
-  // 3. CUSTOMER REPAIRING HANDLERS
-  const handleCreateRepair = (e) => {
+  const handleSendToAlteration = (e) => {
     e.preventDefault();
+    if (!alteringItem || !amendInstruction.trim()) return showBanner('Write what customer wants.');
     const f = e.target;
-    const kId = f.assignedKarigarId.value;
-    const karigar = karigarList.find(k => k.id === kId);
-
-    const ticket = {
-      id: Date.now(),
-      ticketNo: `REP-${String(repairJobs.length + 501)}`,
-      date: new Date().toISOString().slice(0, 10),
+    const karigar = karigarList.find(k => k.id === f.karigarId.value);
+    const alterationData = {
+      slipNo: `AMD-${String(Date.now()).slice(-4)}`,
       customerName: f.custName.value.trim(),
       customerMobile: f.custMobile.value.trim(),
-      metal: f.metal.value,
-      itemDesc: f.itemDesc.value.trim(),
-      grossWeight: parseFloat(f.grossWeight.value) || 0,
-      issueNote: f.issueNote.value.trim(),
-      dueDate: f.dueDate.value,
-      estCharge: parseFloat(f.estCharge.value) || 0,
-      karigarName: karigar ? karigar.name : 'In-House',
-      status: 'In Repair'
+      instruction: amendInstruction.trim(),
+      deliveryDate: f.deliveryDate.value || '',
+      karigarId: karigar ? karigar.id : '',
+      karigarName: karigar ? karigar.name : 'In-House Workshop',
+      advancePaid: parseFloat(f.advancePaid.value) || 0,
+      sentDate: new Date().toISOString().slice(0, 10)
     };
-
-    setRepairJobs([ticket, ...repairJobs]);
-    setPrintRepairSlip(ticket);
-    f.reset();
-    showBanner(`Repair Ticket ${ticket.ticketNo} created!`);
+    const updatedItem = { ...alteringItem, status: 'alteration', alteration: alterationData };
+    setInventoryItems(inventoryItems.map(i => (i.id === alteringItem.id ? updatedItem : i)));
+    setPrintAmendSlip(updatedItem);
+    showBanner(`${alteringItem.code} locked for ${alterationData.customerName}!`);
+    setAlteringItem(null); setAmendInstruction('');
   };
 
-  // 4. STOCK AMENDMENT COMPLETION + AUTO WEIGHT (+/-) RECONCILIATION (ALL JEWELRY TYPES)
-  const openAlterationReturnForm = (item) => {
-    setCompletingAlterId(item.id);
-    setNewGrossInput(String(item.grossWeight));
-    setNewNetInput(String(item.netWeight));
-    setAlterPurityInput(item.material === 'Silver' ? '99.9' : item.material === 'Gold-Diamond' ? '75.0' : '91.6');
-    setAlterLaborInput('150');
-    setMetalSourceMode('karigar');
-  };
-
-  const handleCompleteAlteration = (item) => {
-    const newGross = parseFloat(newGrossInput);
-    const newNet = parseFloat(newNetInput) || newGross;
-    const purity = parseFloat(alterPurityInput) || 91.6;
-    const laborRs = parseFloat(alterLaborInput) || 0;
-
-    if (isNaN(newGross) || newGross <= 0) {
-      showBanner('Enter valid post-amendment Gross Weight.');
-      return;
-    }
-
-    const oldNet = Number(item.netWeight) || Number(item.grossWeight) || 0;
-    const weightDiff = Math.round((newNet - oldNet) * 1000) / 1000;
-    const fineDiff = Math.round(Math.abs(weightDiff) * (purity / 100) * 1000) / 1000;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const metalCat = item.material === 'Silver' ? 'Silver' : 'Gold';
-    const kId = item.alteration?.karigarId;
-    const kName = item.alteration?.karigarName || 'In-House Workshop';
-
-    let extraMsg = '';
-
-    if (weightDiff > 0 && kId) {
-      const ledgerEntry = {
-        id: Date.now() + 1,
-        date: todayStr,
-        type: metalSourceMode === 'karigar' ? 'receive' : 'issue',
-        karigarId: kId,
-        karigarName: kName,
-        metal: metalCat,
-        description: `Amend +${weightDiff}g (${item.code} ${item.type})`,
-        rawWeight: weightDiff,
-        purityPercent: purity,
-        wastagePercent: 0,
-        fineWeight: fineDiff,
-        laborCharge: laborRs
-      };
-      setKarigarLedger([ledgerEntry, ...karigarLedger]);
-      extraMsg = ` +${weightDiff}g (${fineDiff}g Fine) logged to ${kName}'s Khata.`;
-    } else if (weightDiff < 0) {
-      const scrapWt = Math.abs(weightDiff);
-      const scrapLot = {
-        id: Date.now() + 2,
-        lotNo: `SCRAP-${item.code}`,
-        dateOut: todayStr,
-        melterName: kName,
-        metal: metalCat,
-        sourceRef: `Amendment Cut: ${item.code} ${item.type} (${item.alteration?.instruction || ''})`,
-        oldWeight: scrapWt,
-        status: 'completed',
-        sillyWeight: scrapWt,
-        purityPercent: purity,
-        meltingLoss: 0,
-        fineWeight: fineDiff,
-        dateReturned: todayStr
-      };
-      setMelterJobs([scrapLot, ...melterJobs]);
-
-      if (kId && laborRs > 0) {
-        setKarigarLedger([{
-          id: Date.now() + 3,
-          date: todayStr,
-          type: 'receive',
-          karigarId: kId,
-          karigarName: kName,
-          metal: metalCat,
-          description: `Amendment Labor (${item.code} ${item.type})`,
-          rawWeight: 0,
-          purityPercent: purity,
-          wastagePercent: 0,
-          fineWeight: 0,
-          laborCharge: laborRs
-        }, ...karigarLedger]);
-      }
-      extraMsg = ` Cut scrap ${scrapWt}g (${fineDiff}g Fine) added to Melter Pool.`;
-    } else if (kId && laborRs > 0) {
-      setKarigarLedger([{
-        id: Date.now() + 4,
-        date: todayStr,
-        type: 'receive',
-        karigarId: kId,
-        karigarName: kName,
-        metal: metalCat,
-        description: `Amendment Work (${item.code} ${item.type})`,
-        rawWeight: 0,
-        purityPercent: purity,
-        wastagePercent: 0,
-        fineWeight: 0,
-        laborCharge: laborRs
-      }, ...karigarLedger]);
-    }
-
-    if (setInventoryItems) {
-      setInventoryItems(inventoryItems.map(inv =>
-        inv.id === item.id
-          ? {
-              ...inv,
-              status: 'live',
-              grossWeight: newGross,
-              netWeight: newNet,
-              reservedFor: item.alteration?.customerName || '',
-              reservedMobile: item.alteration?.customerMobile || '',
-              alterationNote: item.alteration?.instruction || '',
-              alteration: null
-            }
-          : inv
-      ));
-    }
-
-    setCompletingAlterId(null);
-    showBanner(`${item.code} (${item.type}) updated to ${newGross}g & unlocked in Live Vault for ${item.alteration?.customerName}!${extraMsg}`);
-  };
-
-  const completedGoldMelts = melterJobs.filter(m => m.status === 'completed' && m.metal === 'Gold');
-  const completedSilverMelts = melterJobs.filter(m => m.status === 'completed' && m.metal === 'Silver');
-  const totalRefinedGold = Math.round(completedGoldMelts.reduce((s, m) => s + Number(m.fineWeight || 0), 0) * 1000) / 1000;
-  const totalRefinedSilver = Math.round(completedSilverMelts.reduce((s, m) => s + Number(m.fineWeight || 0), 0) * 1000) / 1000;
+  const draftItems = inventoryItems.filter(i => i.status === 'draft');
+  const liveItems = inventoryItems.filter(i => i.status === 'live');
   const alterationItems = inventoryItems.filter(i => i.status === 'alteration');
+  const filteredVault = liveItems.filter(item =>
+    (filterMaterial === 'All' || item.material === filterMaterial) &&
+    (filterType === 'All' || item.type === filterType) &&
+    (!searchQuery || item.code.toLowerCase().includes(searchQuery.toLowerCase()) || item.type.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className="space-y-4">
       {banner && (
-        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between">
-          <span className="flex items-center gap-1.5"><CheckCircle2 size={15} /> {banner}</span>
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex justify-between">
+          <span>{banner}</span>
           <button onClick={() => setBanner('')}><X size={14} /></button>
         </div>
       )}
 
-      <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs flex flex-wrap gap-1.5">
+      <div className="bg-white p-2 rounded-xl border border-slate-200/80 flex flex-wrap gap-1.5">
         {[
-          { id: 'melter', label: `1. Melter & Silly (${melterJobs.length})`, icon: Flame },
-          { id: 'karigar', label: `2. Karigar Ledger (${karigarList.length})`, icon: Hammer },
-          { id: 'repair', label: `3. Customer Repairs (${repairJobs.filter(r => r.status !== 'Delivered').length})`, icon: Wrench },
-          { id: 'sizing', label: `4. Stock Amendments (${alterationItems.length})`, icon: Sparkles }
+          ...(canCreate ? [{ id: 'entry', label: '+ Stock Entry', icon: Plus }] : []),
+          { id: 'drafts', label: `Drafts (${draftItems.length})`, icon: Printer },
+          { id: 'vault', label: `Live Vault (${liveItems.length})`, icon: Package },
+          { id: 'alteration', label: `Amendments (${alterationItems.length})`, icon: Wrench },
+          { id: 'handover', label: 'Handover', icon: UserCheck },
+          { id: 'audit', label: 'Night Audit', icon: ClipboardCheck }
         ].map(t => {
           const Icon = t.icon;
           return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                tab === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
+            <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${tab === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
               <Icon size={14} /> {t.label}
             </button>
           );
         })}
       </div>
 
-      {/* TAB 1: MELTER & SILLY */}
-      {tab === 'melter' && (
+      {tab === 'entry' && canCreate && (
         <div className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
-              <div className="text-[11px] text-slate-500">Total Melted Fine Gold (24K)</div>
-              <div className="text-base font-bold text-amber-700 mt-0.5">{totalRefinedGold} g</div>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
-              <div className="text-[11px] text-slate-500">Total Melted Fine Silver (999)</div>
-              <div className="text-base font-bold text-slate-800 mt-0.5">{totalRefinedSilver} g</div>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
-              <div className="text-[11px] text-slate-500">Currently at Melter</div>
-              <div className="text-base font-bold text-orange-600 mt-0.5">{melterJobs.filter(m => m.status === 'melting').length} Lots</div>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
-              <div className="text-[11px] text-slate-500">Completed Silly & Scrap Lots</div>
-              <div className="text-base font-bold text-emerald-700 mt-0.5">{melterJobs.filter(m => m.status === 'completed').length} Lots</div>
-            </div>
+          <div className="bg-white p-3 rounded-2xl border flex gap-2">
+            <button type="button" onClick={() => setEntryMode('single')} className={`px-3.5 py-1.5 rounded-lg font-semibold ${entryMode === 'single' ? 'bg-slate-900 text-white' : 'bg-slate-100'}`}>Single Item</button>
+            <button type="button" onClick={() => setEntryMode('batch')} className={`px-3.5 py-1.5 rounded-lg font-semibold ${entryMode === 'batch' ? 'bg-teal-700 text-white' : 'bg-teal-50 text-teal-800'}`}>Batch Entry (One Go)</button>
           </div>
 
-          <div className="grid lg:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Send Old Metal to Melter (Galaai)</h3>
-              <form onSubmit={handleSendToMelter} className="space-y-3">
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Melter / Refiner Name *</label>
-                  <input name="melterName" type="text" required placeholder="e.g. Mahesh Galaai Wala" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Metal Type *</label>
-                  <select name="metal" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-semibold">
-                    <option value="Gold">Old Gold</option>
-                    <option value="Silver">Old Silver</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Old Gross Weight Given (g) *</label>
-                  <input name="oldWeight" type="number" step="0.001" required placeholder="e.g. 45.200" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-bold" />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Customer / Lot Reference</label>
-                  <input name="sourceRef" type="text" placeholder="Customer name or URD voucher" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                </div>
-                <button type="submit" className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg">Issue to Melter</button>
-              </form>
-            </div>
-
-            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                <h3 className="text-sm font-bold text-slate-900">Melting, Silly & Amendment Scrap Register</h3>
-                <span className="text-[11px] text-slate-500">Auto-calculates Loss & Fine Weight</span>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {melterJobs.map(job => {
-                  const isReturning = returningMeltId === job.id;
-                  const previewLoss = isReturning && sillyWtInput ? Math.round((job.oldWeight - parseFloat(sillyWtInput)) * 1000) / 1000 : 0;
-                  const previewFine = isReturning && sillyWtInput && purityInput
-                    ? Math.round(parseFloat(sillyWtInput) * (parseFloat(purityInput) / 100) * 1000) / 1000
-                    : 0;
-
-                  return (
-                    <div key={job.id} className="p-4 space-y-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <span className="font-bold text-slate-900">{job.lotNo}</span> • <strong>{job.melterName}</strong> ({job.metal})
-                          <div className="text-[11px] text-slate-500">Issued: <strong>{job.oldWeight}g</strong> on {job.dateOut} • Ref: {job.sourceRef}</div>
-                        </div>
-
-                        {job.status === 'melting' ? (
-                          <button type="button" onClick={() => { setReturningMeltId(isReturning ? null : job.id); setSillyWtInput(''); setPurityInput('91.6'); }} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg">
-                            {isReturning ? 'Cancel' : 'Receive Silly & Purity'}
-                          </button>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[11px]">In Fine Pool ✓</span>
-                        )}
-                      </div>
-
-                      {job.status === 'completed' && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 text-[11px]">
-                          <div>Returned Wt: <strong className="text-slate-900">{job.sillyWeight}g</strong></div>
-                          <div>Purity: <strong className="text-slate-900">{job.purityPercent}%</strong></div>
-                          <div>Loss: <strong className="text-red-600">{job.meltingLoss}g</strong></div>
-                          <div>Net Fine ({job.metal === 'Gold' ? '24K' : '999'}): <strong className="text-emerald-700">{job.fineWeight}g</strong></div>
-                        </div>
-                      )}
-
-                      {isReturning && (
-                        <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-3">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                            <div>
-                              <label className="block font-bold text-slate-700 mb-1">Returned Silly Wt (g) *</label>
-                              <input type="number" step="0.001" value={sillyWtInput} onChange={(e) => setSillyWtInput(e.target.value)} placeholder="e.g. 44.850" className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-bold" />
-                            </div>
-                            <div>
-                              <label className="block font-bold text-slate-700 mb-1">Purity (%) *</label>
-                              <input type="number" step="0.01" value={purityInput} onChange={(e) => setPurityInput(e.target.value)} placeholder="e.g. 88.50" className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-bold" />
-                            </div>
-                            <div className="flex items-end">
-                              <button type="button" onClick={() => handleCompleteSillyReturn(job)} className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg">Save Silly Report</button>
-                            </div>
-                          </div>
-                          {sillyWtInput && (
-                            <div className="text-[11px] text-slate-700 flex gap-4">
-                              <span>Auto Melting Wastage: <strong className="text-red-600">{previewLoss}g</strong></span>
-                              <span>Converted Fine Metal: <strong className="text-emerald-700">{previewFine}g</strong></span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {melterJobs.length === 0 && (
-                  <div className="p-8 text-center text-slate-400">No melting lots recorded yet.</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: KARIGAR LEDGER */}
-      {tab === 'karigar' && (
-        <div className="space-y-4 text-xs">
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => setKarigarSubTab('issue')} className={`px-3 py-1.5 rounded-lg font-semibold ${karigarSubTab === 'issue' ? 'bg-amber-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>+ Issue Metal to Karigar</button>
-            <button onClick={() => setKarigarSubTab('receive')} className={`px-3 py-1.5 rounded-lg font-semibold ${karigarSubTab === 'receive' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>+ Receive Finished Jewelry</button>
-            <button onClick={() => setKarigarSubTab('karigars')} className={`px-3 py-1.5 rounded-lg font-semibold ${karigarSubTab === 'karigars' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>Manage Karigars ({karigarList.length})</button>
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
-              {karigarSubTab === 'karigars' && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><UserPlus size={16} /> Register New Karigar</h3>
-                  <form onSubmit={handleAddKarigar} className="space-y-3">
+          {entryMode === 'single' ? (
+            <div className="grid lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 bg-white p-5 rounded-2xl border">
+                <form onSubmit={handleSaveToDraft} className="space-y-3">
+                  <div className="grid sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Karigar Name *</label>
-                      <input name="kName" type="text" required placeholder="e.g. Rahim Bhai Bengali" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Mobile Number</label>
-                      <input name="kMobile" type="tel" placeholder="10-digit mobile" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Specialty</label>
-                      <input name="kSpecialty" type="text" placeholder="e.g. Casting, Jadau, Amendments" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <button type="submit" className="w-full py-2 bg-slate-900 text-white font-semibold rounded-lg">Save Karigar</button>
-                  </form>
-                </div>
-              )}
-
-              {karigarSubTab === 'issue' && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-slate-900">Issue Raw / Fine Metal</h3>
-                  <form onSubmit={handleIssueMetalToKarigar} className="space-y-3">
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Select Karigar *</label>
-                      <select name="karigarId" required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-semibold">
-                        <option value="">-- Choose Karigar --</option>
-                        {karigarList.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+                      <label className="block font-semibold mb-1">Metal *</label>
+                      <select value={material} onChange={(e) => { setMaterial(e.target.value); setJewelType(DEFAULT_TYPES[e.target.value][0]); if (rawImageFile) processSinglePhoto(rawImageFile, e.target.value, aiBackdropOn); }} className="w-full px-3 py-1.5 border rounded-lg font-semibold">
+                        <option value="Gold">Gold</option>
+                        <option value="Silver">Silver</option>
+                        <option value="Gold-Diamond">Gold-Diamond</option>
                       </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block font-semibold text-slate-600 mb-1">Metal</label>
-                        <select name="metal" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                          <option value="Gold">Gold</option>
-                          <option value="Silver">Silver</option>
+                    <div className="sm:col-span-2">
+                      <div className="flex justify-between mb-1">
+                        <label className="font-semibold">Jewelry Type *</label>
+                        <button type="button" onClick={() => setShowAddType(!showAddType)} className="text-[11px] font-bold text-teal-700">{showAddType ? 'Close' : '+ New Type'}</button>
+                      </div>
+                      {showAddType ? (
+                        <div className="flex gap-1.5">
+                          <input type="text" value={newTypeInput} onChange={(e) => setNewTypeInput(e.target.value)} placeholder="New type name" className="flex-1 px-3 py-1.5 border rounded-lg" />
+                          <button type="button" onClick={() => { if (newTypeInput.trim()) { setCustomJewelTypes({ ...customJewelTypes, [material]: [...(customJewelTypes[material] || []), newTypeInput.trim()] }); setJewelType(newTypeInput.trim()); setNewTypeInput(''); setShowAddType(false); } }} className="px-3 py-1.5 bg-teal-600 text-white font-semibold rounded-lg">Add</button>
+                        </div>
+                      ) : (
+                        <select value={jewelType} onChange={(e) => setJewelType(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg">
+                          {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
-                      </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Tag Code *</label>
+                      <input type="text" value={tagCode} onChange={(e) => setTagCode(e.target.value.toUpperCase())} required className="w-full px-3 py-1.5 border rounded-lg font-bold text-teal-700 bg-teal-50/40" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Gross Wt (g) *</label>
+                      <input type="number" step="0.001" required value={grossWeight} onChange={(e) => { setGrossWeight(e.target.value); if (!netWeight) setNetWeight(e.target.value); }} className="w-full px-3 py-1.5 border rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold mb-1">Net Wt (g)</label>
+                      <input type="number" step="0.001" value={netWeight} onChange={(e) => setNetWeight(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg" />
+                    </div>
+                    {material === 'Gold-Diamond' && (
                       <div>
-                        <label className="block font-semibold text-slate-600 mb-1">Purity (%) *</label>
-                        <input name="issuePurity" type="number" step="0.01" defaultValue="99.5" required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                        <label className="block font-semibold mb-1">Diamond (Ct)</label>
+                        <input type="number" step="0.01" value={diamondCarat} onChange={(e) => setDiamondCarat(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg" />
                       </div>
-                    </div>
+                    )}
                     <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Weight Issued (g) *</label>
-                      <input name="issueWt" type="number" step="0.001" required placeholder="e.g. 25.000" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-bold" />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Design / Order Note</label>
-                      <input name="description" type="text" placeholder="e.g. 2 Ladies Rings 22K" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                    </div>
-                    <button type="submit" className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg">Issue Metal</button>
-                  </form>
-                </div>
-              )}
-
-              {karigarSubTab === 'receive' && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-slate-900">Receive Finished Jewelry</h3>
-                  <form onSubmit={handleReceiveFromKarigar} className="space-y-3">
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Select Karigar *</label>
-                      <select name="karigarId" required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-semibold">
-                        <option value="">-- Choose Karigar --</option>
-                        {karigarList.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+                      <label className="block font-semibold mb-1">Making Type</label>
+                      <select value={makingMode} onChange={(e) => setMakingMode(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg">
+                        <option value="percent">Making (%)</option>
+                        <option value="rate">Rate (₹/g)</option>
                       </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block font-semibold text-slate-600 mb-1">Metal</label>
-                        <select name="metal" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                          <option value="Gold">Gold</option>
-                          <option value="Silver">Silver</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block font-semibold text-slate-600 mb-1">Net Ornament Wt (g) *</label>
-                        <input name="ornamentWt" type="number" step="0.001" required placeholder="e.g. 22.400" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-bold" />
-                      </div>
-                      <div>
-                        <label className="block font-semibold text-slate-600 mb-1">Ornament Touch (%)</label>
-                        <input name="touchPct" type="number" step="0.01" defaultValue="91.6" required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                      </div>
-                      <div>
-                        <label className="block font-semibold text-slate-600 mb-1">Wastage / Ghat (%)</label>
-                        <input name="wastagePct" type="number" step="0.01" defaultValue="3.0" required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-                      </div>
-                    </div>
                     <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Karigar Labor / Majoori (₹) *</label>
-                      <input name="laborCharge" type="number" step="1" required placeholder="e.g. 3500" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-bold" />
+                      <label className="block font-semibold mb-1">{makingMode === 'percent' ? 'Making %' : '₹/g'}</label>
+                      <input type="number" step="0.01" required value={makingValue} onChange={(e) => setMakingValue(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg" />
                     </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Item Description</label>
-                      <input name="description" type="text" placeholder="e.g. 22K Designer Necklace" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 border space-y-2">
+                    <div className="flex justify-between">
+                      <span className="font-bold flex items-center gap-1"><Sparkles size={13} className="text-amber-600" /> AI Photo *</span>
+                      <label className="inline-flex items-center gap-1 text-[11px]">
+                        <input type="checkbox" checked={aiBackdropOn} onChange={(e) => { setAiBackdropOn(e.target.checked); if (rawImageFile) processSinglePhoto(rawImageFile, material, e.target.checked); }} /> Studio Frame
+                      </label>
                     </div>
-                    <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg">Record Receipt</button>
-                  </form>
-                </div>
-              )}
+                    <input type="file" accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files[0]; if (f) { setRawImageFile(f); processSinglePhoto(f, material, aiBackdropOn); } }} className="w-full bg-white p-1.5 border rounded-lg" />
+                  </div>
+                  <button type="submit" disabled={isSaving || isProcessingImg} className="px-5 py-2 bg-slate-900 text-white font-semibold rounded-lg">{isSaving ? 'Saving...' : 'Save to Drafts'}</button>
+                </form>
+              </div>
+              <div className="bg-white p-5 rounded-2xl border flex items-center justify-center">
+                {processedPreview ? <img src={processedPreview} alt="Preview" className="w-48 h-48 object-cover rounded-xl border" /> : <div className="w-48 h-48 rounded-xl border-2 border-dashed flex items-center justify-center text-slate-400">Photo Preview</div>}
+              </div>
             </div>
+          ) : (
+            <div className="bg-white p-5 rounded-2xl border space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 p-3 rounded-xl bg-slate-50 border">
+                <select value={material} onChange={(e) => { setMaterial(e.target.value); setJewelType(DEFAULT_TYPES[e.target.value][0]); }} className="px-2 py-1.5 bg-white border rounded-lg font-semibold">
+                  <option value="Gold">Gold</option>
+                  <option value="Silver">Silver</option>
+                  <option value="Gold-Diamond">Gold-Diamond</option>
+                </select>
+                <select value={jewelType} onChange={(e) => setJewelType(e.target.value)} className="px-2 py-1.5 bg-white border rounded-lg">
+                  {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <input type="text" value={tagCode} onChange={(e) => setTagCode(e.target.value.toUpperCase())} className="px-2 py-1.5 bg-teal-50 border border-teal-300 rounded-lg font-bold text-teal-800" />
+                <select value={makingMode} onChange={(e) => setMakingMode(e.target.value)} className="px-2 py-1.5 bg-white border rounded-lg">
+                  <option value="percent">Making (%)</option>
+                  <option value="rate">Rate (₹/g)</option>
+                </select>
+                <input type="number" step="0.01" value={makingValue} onChange={(e) => { setMakingValue(e.target.value); setBatchRows(batchRows.map(r => ({ ...r, makingValue: e.target.value }))); }} className="px-2 py-1.5 bg-white border rounded-lg font-semibold" />
+              </div>
 
-            <div className="lg:col-span-2 space-y-4">
-              {karigarList.length > 0 && (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {karigarList.map(k => {
-                    const goldBal = getKarigarSummary(k.id, 'Gold');
-                    const silverBal = getKarigarSummary(k.id, 'Silver');
-                    return (
-                      <div key={k.id} className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex justify-between items-center">
-                        <div>
-                          <div className="font-bold text-slate-900">{k.name}</div>
-                          <div className="text-[11px] text-slate-500">{k.specialty} • {k.mobile || 'No Phone'}</div>
-                        </div>
-                        <div className="text-right text-[11px]">
-                          <div>Fine Gold Bal: <strong className={goldBal.fineBalance > 0 ? 'text-amber-700' : 'text-emerald-700'}>{goldBal.fineBalance}g</strong></div>
-                          {silverBal.fineBalance !== 0 && <div>Fine Silver Bal: <strong>{silverBal.fineBalance}g</strong></div>}
-                          <div>Total Labor: <strong className="text-slate-900">₹{(goldBal.totalLabor + silverBal.totalLabor).toLocaleString('en-IN')}</strong></div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-                <div className="p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-900">Karigar Issue & Receipt Ledger</h3>
-                  <select value={selectedKarigarFilter} onChange={(e) => setSelectedKarigarFilter(e.target.value)} className="px-2.5 py-1 border border-slate-200 rounded-lg text-xs">
-                    <option value="All">All Karigars</option>
-                    {karigarList.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
-                  </select>
-                </div>
-                <div className="overflow-x-auto max-h-80">
+              <form onSubmit={handleSaveBatchToDraft} className="space-y-3">
+                <div className="overflow-x-auto border rounded-xl">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
+                    <thead className="bg-slate-50 border-b">
                       <tr>
-                        <th className="p-3">Date & Karigar</th>
-                        <th className="p-3">Action</th>
-                        <th className="p-3">Item / Note</th>
-                        <th className="p-3">Gross Wt</th>
-                        <th className="p-3">Fine Eq.</th>
-                        <th className="p-3 text-right">Labor</th>
+                        <th className="p-2">Tag</th>
+                        <th className="p-2">Gross Wt *</th>
+                        <th className="p-2">Net Wt</th>
+                        <th className="p-2">Making</th>
+                        <th className="p-2">Photo (Opt)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {karigarLedger
-                        .filter(e => selectedKarigarFilter === 'All' || e.karigarId === selectedKarigarFilter)
-                        .map(entry => (
-                          <tr key={entry.id}>
-                            <td className="p-3">
-                              <div className="font-bold text-slate-900">{entry.karigarName}</div>
-                              <div className="text-[11px] text-slate-500">{entry.date} • {entry.metal}</div>
-                            </td>
-                            <td className="p-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${entry.type === 'issue' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                                {entry.type === 'issue' ? 'Issued' : 'Received'}
-                              </span>
-                            </td>
-                            <td className="p-3">{entry.description}</td>
-                            <td className="p-3 font-semibold">{entry.rawWeight}g ({entry.purityPercent}%{entry.wastagePercent ? ` + ${entry.wastagePercent}% Ghat` : ''})</td>
-                            <td className="p-3 font-bold text-slate-900">{entry.fineWeight}g</td>
-                            <td className="p-3 text-right font-semibold">{entry.laborCharge ? `₹${entry.laborCharge}` : '-'}</td>
-                          </tr>
-                        ))}
-                      {karigarLedger.length === 0 && (
-                        <tr><td colSpan="6" className="p-8 text-center text-slate-400">No Karigar transactions yet.</td></tr>
-                      )}
+                    <tbody className="divide-y">
+                      {batchRows.map((row, idx) => (
+                        <tr key={row.key}>
+                          <td className="p-2 font-bold text-teal-700">{getBatchRowCode(tagCode, idx)}</td>
+                          <td className="p-2"><input type="number" step="0.001" value={row.grossWeight} onChange={(e) => setBatchRows(batchRows.map((r, i) => i === idx ? { ...r, grossWeight: e.target.value, netWeight: e.target.value } : r))} placeholder="0.000" className="w-20 px-2 py-1 border rounded" /></td>
+                          <td className="p-2"><input type="number" step="0.001" value={row.netWeight} onChange={(e) => setBatchRows(batchRows.map((r, i) => i === idx ? { ...r, netWeight: e.target.value } : r))} placeholder="0.000" className="w-20 px-2 py-1 border rounded" /></td>
+                          <td className="p-2"><input type="number" step="0.01" value={row.makingValue} onChange={(e) => setBatchRows(batchRows.map((r, i) => i === idx ? { ...r, makingValue: e.target.value } : r))} className="w-16 px-2 py-1 border rounded" /></td>
+                          <td className="p-2"><input type="file" accept="image/*" capture="environment" onChange={async (e) => { const f = e.target.files[0]; if (f) { const d = await optimizeImageToDataUrl(f, material, aiBackdropOn); setBatchRows(batchRows.map((r, i) => i === idx ? { ...r, preview: d } : r)); } }} className="text-[11px] max-w-[140px]" /></td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
-              </div>
+                <div className="flex justify-between">
+                  <button type="button" onClick={() => setBatchRows([...batchRows, { key: Date.now(), grossWeight: '', netWeight: '', makingValue, preview: '' }])} className="px-3 py-1.5 bg-slate-100 font-semibold rounded-lg">+ Add Row</button>
+                  <button type="submit" disabled={isSaving} className="px-4 py-2 bg-slate-900 text-white font-semibold rounded-lg inline-flex items-center gap-1"><Save size={14} /> {isSaving ? 'Saving...' : 'Save Batch to Draft'}</button>
+                </div>
+              </form>
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* TAB 3: CUSTOMER REPAIRING */}
-      {tab === 'repair' && (
-        <div className="grid lg:grid-cols-3 gap-4 text-xs">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
-            <h3 className="text-sm font-bold text-slate-900">New Customer Repair Intake</h3>
-            <form onSubmit={handleCreateRepair} className="space-y-3">
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Customer Name *</label>
-                <input name="custName" type="text" required placeholder="Customer Name" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
+      {tab === 'drafts' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border overflow-hidden">
+            <div className="p-4 border-b flex flex-wrap justify-between gap-2">
+              <h3 className="text-sm font-bold">Drafts ({draftItems.length})</h3>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setSelectedDraftIds(selectedDraftIds.length === draftItems.length ? [] : draftItems.map(d => d.id))} className="px-3 py-1 bg-slate-100 text-xs font-semibold rounded-lg">Select All</button>
+                <button type="button" disabled={!selectedDraftIds.length} onClick={() => setPrintBatchItems(draftItems.filter(d => selectedDraftIds.includes(d.id)))} className="px-3 py-1 bg-indigo-600 disabled:bg-slate-300 text-white text-xs font-semibold rounded-lg">Print Tags ({selectedDraftIds.length})</button>
+                <button type="button" disabled={!selectedDraftIds.length} onClick={() => { setInventoryItems(inventoryItems.map(i => selectedDraftIds.includes(i.id) ? { ...i, status: 'live' } : i)); setSelectedDraftIds([]); showBanner('Moved to Live Vault!'); }} className="px-3 py-1 bg-emerald-600 disabled:bg-slate-300 text-white text-xs font-semibold rounded-lg">Approve Live ({selectedDraftIds.length})</button>
               </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Mobile Number *</label>
-                <input name="custMobile" type="tel" required placeholder="10-digit mobile" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Metal</label>
-                  <select name="metal" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                    <option value="Gold">Gold</option>
-                    <option value="Silver">Silver</option>
-                    <option value="Diamond">Diamond</option>
-                  </select>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b">
+                  <tr>
+                    <th className="p-3">Pick</th>
+                    <th className="p-3">Photo</th>
+                    <th className="p-3">Code</th>
+                    <th className="p-3">Type</th>
+                    <th className="p-3">Weight</th>
+                    <th className="p-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {draftItems.map(item => {
+                    const checked = selectedDraftIds.includes(item.id);
+                    return (
+                      <tr key={item.id}>
+                        <td className="p-3"><input type="checkbox" checked={checked} onChange={() => setSelectedDraftIds(checked ? selectedDraftIds.filter(id => id !== item.id) : [...selectedDraftIds, item.id])} /></td>
+                        <td className="p-3"><img src={item.imageUrl} alt={item.code} className="w-9 h-9 rounded object-cover border" /></td>
+                        <td className="p-3 font-bold">{item.code}</td>
+                        <td className="p-3">{item.material} • {item.type}</td>
+                        <td className="p-3">{item.grossWeight}g</td>
+                        <td className="p-3 text-right space-x-1">
+                          <button type="button" onClick={() => { setInventoryItems(inventoryItems.map(i => i.id === item.id ? { ...i, status: 'live' } : i)); showBanner(`${item.code} Live!`); }} className="px-2 py-1 bg-emerald-50 text-emerald-700 font-semibold rounded">Move Live</button>
+                          {canDelete && <button type="button" onClick={() => setInventoryItems(inventoryItems.filter(i => i.id !== item.id))} className="p-1 text-red-500"><Trash2 size={14} /></button>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!draftItems.length && <tr><td colSpan="6" className="p-6 text-center text-slate-400">No pending drafts.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {printBatchItems.length > 0 && (
+            <div className="bg-white p-4 rounded-2xl border space-y-3">
+              <div className="flex justify-between">
+                <span className="text-xs font-bold">Thermal Tags ({printBatchItems.length})</span>
+                <div className="flex gap-2">
+                  <button onClick={() => window.print()} className="px-3 py-1 bg-slate-900 text-white text-xs rounded">Print</button>
+                  <button onClick={() => setPrintBatchItems([])} className="px-3 py-1 bg-slate-100 text-xs rounded">Close</button>
                 </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Item Weight (g) *</label>
-                  <input name="grossWeight" type="number" step="0.001" required placeholder="e.g. 8.500" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-bold" />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {printBatchItems.map(t => (
+                  <div key={t.id} className="p-2 border-2 border-dashed text-center text-[10px] font-mono">
+                    <div className="font-bold">SWARNASETU</div>
+                    <div className="bg-slate-900 text-white font-bold my-0.5">{t.code}</div>
+                    <div>{t.type} • {t.grossWeight}g</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'vault' && (
+        <div className="space-y-4">
+          {alteringItem && (
+            <div className="bg-white p-5 rounded-2xl border-2 border-amber-400 space-y-3 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b">
+                <h4 className="font-bold flex items-center gap-1.5"><Wrench size={15} className="text-amber-600" /> Customer Amendment: {alteringItem.code} ({alteringItem.type} • {alteringItem.grossWeight}g)</h4>
+                <button onClick={() => { setAlteringItem(null); setAmendInstruction(''); }}><X size={15} /></button>
+              </div>
+              <form onSubmit={handleSendToAlteration} className="space-y-3">
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <input name="custName" type="text" required placeholder="Customer Name *" className="px-3 py-1.5 border rounded-lg" />
+                  <input name="custMobile" type="tel" placeholder="Customer Mobile" className="px-3 py-1.5 border rounded-lg" />
+                  <input name="deliveryDate" type="date" className="px-3 py-1.5 border rounded-lg" />
                 </div>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Item Description *</label>
-                <input name="itemDesc" type="text" required placeholder="e.g. Broken Gold Chain / Ring Polish" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Repair Work Needed *</label>
-                <input name="issueNote" type="text" required placeholder="e.g. Laser soldering + Rhodium polish" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Assign Karigar</label>
-                  <select name="assignedKarigarId" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg">
-                    <option value="">In-House / Self</option>
+                <div className="p-3 rounded-xl bg-amber-50/50 border border-amber-200 space-y-2">
+                  <label className="block font-bold">What Customer Wants (Write Full Amendment Details) *</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_AMEND_TAGS.map(tag => (
+                      <button key={tag} type="button" onClick={() => setAmendInstruction(p => p ? `${p}, ${tag}` : tag)} className="px-2 py-0.5 bg-white border border-amber-200 rounded text-[10px] font-semibold">+ {tag}</button>
+                    ))}
+                  </div>
+                  <textarea rows="2" required value={amendInstruction} onChange={(e) => setAmendInstruction(e.target.value)} placeholder="Write exact customer demand: length adjust, lock/kunda change, polish, moti/drops, resizing..." className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg font-medium" />
+                </div>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <select name="karigarId" className="px-3 py-1.5 border rounded-lg">
+                    <option value="">In-House Workshop</option>
                     {karigarList.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
                   </select>
+                  <input name="advancePaid" type="number" defaultValue="0" placeholder="Advance Paid ₹" className="px-3 py-1.5 border rounded-lg font-semibold" />
+                  <button type="submit" className="py-2 bg-amber-600 text-white font-semibold rounded-lg">Lock & Print Slip</button>
                 </div>
+              </form>
+            </div>
+          )}
+
+          {editingItem && canModify && (
+            <div className="bg-white p-4 rounded-2xl border border-slate-300 space-y-2 text-xs">
+              <div className="flex justify-between"><span className="font-bold">Edit {editingItem.code}</span><button onClick={() => setEditingItem(null)}><X size={14} /></button></div>
+              <form onSubmit={(e) => { e.preventDefault(); setInventoryItems(inventoryItems.map(i => i.id === editingItem.id ? editingItem : i)); setEditingItem(null); showBanner('Updated.'); }} className="grid sm:grid-cols-4 gap-2">
+                <input type="text" value={editingItem.type} onChange={(e) => setEditingItem({ ...editingItem, type: e.target.value })} className="px-2.5 py-1.5 border rounded" />
+                <input type="number" step="0.001" value={editingItem.grossWeight} onChange={(e) => setEditingItem({ ...editingItem, grossWeight: parseFloat(e.target.value) || 0, netWeight: parseFloat(e.target.value) || 0 })} className="px-2.5 py-1.5 border rounded" />
+                <input type="number" step="0.01" value={editingItem.makingValue} onChange={(e) => setEditingItem({ ...editingItem, makingValue: parseFloat(e.target.value) || 0 })} className="px-2.5 py-1.5 border rounded" />
+                <button type="submit" className="py-1.5 bg-slate-900 text-white font-semibold rounded">Save</button>
+              </form>
+            </div>
+          )}
+
+          <div className="bg-white p-3 rounded-2xl border flex flex-wrap gap-2 text-xs">
+            <div className="flex items-center gap-1.5 flex-1 min-w-[160px] border rounded-lg px-2.5 py-1.5">
+              <Search size={14} className="text-slate-400" />
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search code or type..." className="w-full outline-none" />
+            </div>
+            <select value={filterMaterial} onChange={(e) => { setFilterMaterial(e.target.value); setFilterType('All'); }} className="px-3 py-1.5 border rounded-lg font-semibold">
+              <option value="All">All Metals</option>
+              <option value="Gold">Gold</option>
+              <option value="Silver">Silver</option>
+              <option value="Gold-Diamond">Gold-Diamond</option>
+            </select>
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-3 py-1.5 border rounded-lg">
+              <option value="All">All Types</option>
+              {[...new Set(liveItems.map(i => i.type))].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
+            {filteredVault.map(item => (
+              <div key={item.id} className="bg-white rounded-2xl border shadow-2xs overflow-hidden flex flex-col justify-between">
                 <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Est. Charges (₹)</label>
-                  <input name="estCharge" type="number" defaultValue="250" className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-semibold" />
-                </div>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Delivery Date *</label>
-                <input name="dueDate" type="date" required className="w-full px-3 py-1.5 border border-slate-200 rounded-lg" />
-              </div>
-              <button type="submit" className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg">Create Ticket & Print Receipt</button>
-            </form>
-          </div>
-
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-sm font-bold text-slate-900">Active & Completed Repair Tickets</h3>
-              <span className="text-[11px] text-slate-500">Track Karigar progress & delivery</span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {repairJobs.map(rep => (
-                <div key={rep.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-bold text-slate-900">{rep.ticketNo} • {rep.customerName} ({rep.customerMobile})</div>
-                    <div className="text-slate-600 mt-0.5">{rep.metal} • {rep.itemDesc} (<strong>{rep.grossWeight}g</strong>) — {rep.issueNote}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">Karigar: <strong>{rep.karigarName}</strong> • Due: {rep.dueDate} • Charge: <strong>₹{rep.estCharge}</strong></div>
+                  <div className="h-36 bg-slate-100 relative">
+                    <img src={item.imageUrl} alt={item.code} className="w-full h-full object-cover" />
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/90">{item.material}</span>
+                    {item.reservedFor && <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">Ready: {item.reservedFor}</span>}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setPrintRepairSlip(rep)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-md inline-flex items-center gap-1">
-                      <Printer size={12} /> Slip
-                    </button>
-                    {rep.status === 'In Repair' && (
-                      <button type="button" onClick={() => setRepairJobs(repairJobs.map(r => r.id === rep.id ? { ...r, status: 'Ready' } : r))} className="px-2.5 py-1 bg-amber-600 text-white font-semibold rounded-md">Mark Ready</button>
-                    )}
-                    {rep.status === 'Ready' && (
-                      <button type="button" onClick={() => setRepairJobs(repairJobs.map(r => r.id === rep.id ? { ...r, status: 'Delivered' } : r))} className="px-2.5 py-1 bg-emerald-600 text-white font-semibold rounded-md">Deliver & Collect ₹{rep.estCharge}</button>
-                    )}
-                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                      rep.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700' :
-                      rep.status === 'Ready' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'
-                    }`}>{rep.status}</span>
+                  <div className="p-3 text-xs">
+                    <div className="font-bold text-slate-900">{item.code}</div>
+                    <div className="text-slate-500">{item.type} • <strong>{item.grossWeight}g</strong></div>
+                    <div className="text-[11px] text-amber-700 font-semibold">Making: {item.makingMode === 'percent' ? `${item.makingValue}%` : `₹${item.makingValue}/g`}</div>
                   </div>
                 </div>
-              ))}
-              {repairJobs.length === 0 && (
-                <div className="p-8 text-center text-slate-400">No customer repair tickets yet.</div>
-              )}
-            </div>
+                <div className="px-3 py-2 border-t flex flex-wrap justify-between gap-1 text-[11px]">
+                  <button type="button" onClick={() => { setAlteringItem(item); setAmendInstruction(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="px-2 py-1 bg-amber-50 text-amber-800 font-semibold rounded inline-flex items-center gap-1">
+                    <Wrench size={11} /> Amend / Alter
+                  </button>
+                  {canModify && <button type="button" onClick={() => setEditingItem({ ...item })} className="px-2 py-1 bg-slate-100 rounded"><Edit3 size={11} /></button>}
+                  {canDelete && (confirmDeleteId === item.id ? (
+                    <button type="button" onClick={() => { setInventoryItems(inventoryItems.filter(i => i.id !== item.id)); setConfirmDeleteId(null); }} className="px-2 py-1 bg-red-600 text-white rounded font-bold">Yes</button>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmDeleteId(item.id)} className="px-2 py-1 bg-red-50 text-red-700 rounded"><Trash2 size={11} /></button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!filteredVault.length && <div className="col-span-full bg-white p-8 rounded-2xl border text-center text-xs text-slate-400">No Live Vault items found.</div>}
           </div>
         </div>
       )}
 
-      {/* TAB 4: STOCK AMENDMENTS RETURN (ALL JEWELRY TYPES + AUTO WEIGHT +/- RECONCILIATION) */}
-      {tab === 'sizing' && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden text-xs">
-          <div className="p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Showroom Stock Custom Amendments Desk ({alterationItems.length})</h3>
-              <p className="text-[11px] text-slate-500">Enter post-amendment weight for any jewelry item. Software updates Vault weight, adjusts Karigar Khata (+g), or sends cut scrap (-g) to Melter Pool.</p>
-            </div>
-          </div>
-
-          <div className="divide-y divide-slate-100">
-            {alterationItems.map(item => {
-              const isCompleting = completingAlterId === item.id;
-              const oldNet = Number(item.netWeight) || Number(item.grossWeight) || 0;
-              const parsedNewNet = parseFloat(newNetInput) || parseFloat(newGrossInput) || oldNet;
-              const diff = isCompleting ? Math.round((parsedNewNet - oldNet) * 1000) / 1000 : 0;
-
-              return (
-                <div key={item.id} className="p-4 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <img src={item.imageUrl} alt={item.code} className="w-12 h-12 rounded-lg object-cover border" />
-                      <div>
-                        <div className="font-bold text-slate-900">{item.code} • {item.material} {item.type} (Original Net: {oldNet}g)</div>
-                        <div className="text-amber-800 font-semibold mt-0.5">Customer Demand: {item.alteration?.instruction}</div>
-                        <div className="text-[11px] text-slate-500">
-                          Reserved for: <strong>{item.alteration?.customerName}</strong> • Karigar: <strong>{item.alteration?.karigarName}</strong> • Advance: ₹{item.alteration?.advancePaid || 0}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => (isCompleting ? setCompletingAlterId(null) : openAlterationReturnForm(item))}
-                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg"
-                    >
-                      {isCompleting ? 'Cancel' : 'Receive & Adjust Weight'}
-                    </button>
-                  </div>
-
-                  {isCompleting && (
-                    <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-3">
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">New Gross Wt (g) *</label>
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={newGrossInput}
-                            onChange={(e) => { setNewGrossInput(e.target.value); setNewNetInput(e.target.value); }}
-                            className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">New Net Wt (g) *</label>
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={newNetInput}
-                            onChange={(e) => setNewNetInput(e.target.value)}
-                            className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Purity / Touch (%)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={alterPurityInput}
-                            onChange={(e) => setAlterPurityInput(e.target.value)}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Karigar Labor (₹)</label>
-                          <input
-                            type="number"
-                            step="1"
-                            value={alterLaborInput}
-                            onChange={(e) => setAlterLaborInput(e.target.value)}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg"
-                          />
-                        </div>
-                        <div className="flex items-end">
-                          <button
-                            type="button"
-                            onClick={() => handleCompleteAlteration(item)}
-                            className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg"
-                          >
-                            Update Stock & Unlock
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-200/80 text-[11px]">
-                        <div>
-                          Weight Difference:{' '}
-                          <strong className={diff > 0 ? 'text-amber-800' : diff < 0 ? 'text-red-700' : 'text-emerald-700'}>
-                            {diff > 0 ? `+${diff}g (Metal Added)` : diff < 0 ? `${diff}g (Scrap Cut -> Melter Pool)` : '0.000g (No Weight Change)'}
-                          </strong>
-                        </div>
-                        {diff > 0 && (
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-700">Added Metal Source:</span>
-                            <select value={metalSourceMode} onChange={(e) => setMetalSourceMode(e.target.value)} className="px-2 py-0.5 bg-white border border-slate-300 rounded font-semibold">
-                              <option value="karigar">Karigar Used Own Gold (Credit Karigar)</option>
-                              <option value="showroom">Showroom Gold Given (Debit Karigar)</option>
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {alterationItems.length === 0 && (
-              <div className="p-8 text-center text-slate-400">
-                No items pending custom amendment. Click <strong>"Amend / Alter"</strong> on any jewelry piece in <strong>Inventory & Vault</strong> to send it here.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Printable Customer Repair Receipt Modal */}
-      {printRepairSlip && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-xl space-y-4 text-xs">
-            <div className="flex justify-between items-center pb-2 border-b print:hidden">
-              <span className="font-bold text-slate-900">Customer Repair Receipt</span>
-              <div className="flex gap-2">
-                <button onClick={() => window.print()} className="px-3 py-1 bg-slate-900 text-white rounded-lg font-semibold inline-flex items-center gap-1"><Printer size={12} /> Print</button>
-                <button onClick={() => setPrintRepairSlip(null)} className="px-3 py-1 bg-slate-100 rounded-lg font-semibold">Close</button>
-              </div>
-            </div>
-
-            <div className="p-4 border-2 border-dashed border-slate-400 rounded-xl space-y-2">
-              <div className="text-center border-b pb-2">
-                <div className="font-bold text-sm text-slate-900">SWARNASETU JEWELLERS</div>
-                <div className="text-[11px] text-slate-500">Customer Ornament Repair Acknowledgement</div>
-              </div>
-              <div className="flex justify-between">
-                <span>Ticket: <strong>{printRepairSlip.ticketNo}</strong></span>
-                <span>Date: <strong>{printRepairSlip.date}</strong></span>
-              </div>
-              <div>Customer: <strong>{printRepairSlip.customerName}</strong> ({printRepairSlip.customerMobile})</div>
-              <div>Item: <strong>{printRepairSlip.metal} - {printRepairSlip.itemDesc}</strong></div>
-              <div>Received Weight: <strong>{printRepairSlip.grossWeight} g</strong></div>
-              <div>Work Details: <strong>{printRepairSlip.issueNote}</strong></div>
-              <div className="flex justify-between pt-2 border-t">
-                <span>Est. Charges: <strong>₹{printRepairSlip.estCharge}</strong></span>
-                <span>Delivery Date: <strong>{printRepairSlip.dueDate}</strong></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-// END OF FILE
+      {tab === 'alteration' && (
+        <div className="bg-white rounded-2xl border overflow-hidden text-xs">
+          <div className="p-4 border-b font-bold text-sm">Jewelry in Customer Amendment ({alterationItems.length})</div>
+          <div className="divide-y">
+            {alterationItems.map(item => (
+              <div key={item.id} className="p-4 flex flex-wrap justify-between items-center gap-3">
+                <div>
+                  <div className="font-bold">{item.code} • {item.material} {item.type} ({item.grossWeight}g)</div>
+                  <div className="text-amber-800 font-semibold">Demand: {item.alteration?.instruction}</div>
+                  <div className="text-[11px] text-slate-500">Customer: <strong>{item.alteration?.customerName}</strong> • Karigar: <strong>{item.alteration?.karigarName}</strong></div>
