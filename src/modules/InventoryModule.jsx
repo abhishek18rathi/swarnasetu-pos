@@ -18,14 +18,26 @@ const STUDIO_BACKDROPS = {
   'Gold-Diamond': { label: 'Pearl Ivory Studio', bg: '#f8fafc', border: '#94a3b8' }
 };
 
+function dataUrlToBlob(dataUrl) {
+  const parts = dataUrl.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const bstr = atob(parts[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+}
+
 export default function InventoryModule({
   currentUser,
-  staffList,
-  inventoryItems,
+  staffList = [],
+  inventoryItems = [],
   setInventoryItems,
-  customJewelTypes,
+  customJewelTypes = { Gold: [], Silver: [], 'Gold-Diamond': [] },
   setCustomJewelTypes,
-  nightAudits,
+  nightAudits = [],
   setNightAudits
 }) {
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.privileges?.payroll_admin;
@@ -34,10 +46,9 @@ export default function InventoryModule({
   const canDelete = isAdmin || !!currentUser?.privileges?.inv_delete;
 
   const [tab, setTab] = useState(canCreate ? 'entry' : 'vault');
-  const [entryMode, setEntryMode] = useState('single'); // 'single' | 'batch'
+  const [entryMode, setEntryMode] = useState('single');
   const [banner, setBanner] = useState('');
 
-  // Common Category & Making States
   const [material, setMaterial] = useState('Gold');
   const [jewelType, setJewelType] = useState('Ring');
   const [newTypeInput, setNewTypeInput] = useState('');
@@ -47,17 +58,15 @@ export default function InventoryModule({
   const [grossWeight, setGrossWeight] = useState('');
   const [netWeight, setNetWeight] = useState('');
   const [diamondCarat, setDiamondCarat] = useState('');
-  const [makingMode, setMakingMode] = useState('percent'); // 'percent' | 'rate'
+  const [makingMode, setMakingMode] = useState('percent');
   const [makingValue, setMakingValue] = useState('12');
 
-  // Single Entry AI Photo States
   const [rawImageFile, setRawImageFile] = useState(null);
   const [processedPreview, setProcessedPreview] = useState('');
   const [aiBackdropOn, setAiBackdropOn] = useState(true);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Batch Entry Rows State
   const [batchRows, setBatchRows] = useState([
     { key: 1, grossWeight: '', netWeight: '', diamondCarat: '', makingValue: '12', preview: '' },
     { key: 2, grossWeight: '', netWeight: '', diamondCarat: '', makingValue: '12', preview: '' },
@@ -66,21 +75,16 @@ export default function InventoryModule({
     { key: 5, grossWeight: '', netWeight: '', diamondCarat: '', makingValue: '12', preview: '' }
   ]);
 
-  // Draft Batch Selection & Print Modal
   const [selectedDraftIds, setSelectedDraftIds] = useState([]);
   const [printBatchItems, setPrintBatchItems] = useState([]);
 
-  // Vault Filters, Edit & Delete States
   const [filterMaterial, setFilterMaterial] = useState('All');
   const [filterType, setFilterType] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingItem, setEditingItem] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
-  // Daily Staff Handover State
   const [selectedHandoverStaff, setSelectedHandoverStaff] = useState('');
-
-  // Nightly Audit State
   const [auditMaterial, setAuditMaterial] = useState('Gold');
   const [physicalCountInput, setPhysicalCountInput] = useState('');
   const [auditRemarks, setAuditRemarks] = useState('');
@@ -95,7 +99,6 @@ export default function InventoryModule({
     ...((customJewelTypes && customJewelTypes[material]) || [])
   ];
 
-  // Auto-generate next Starting Tag Code whenever material or type changes
   useEffect(() => {
     if (!material || !jewelType) return;
     const mCode = material === 'Gold' ? 'GLD' : material === 'Silver' ? 'SLV' : 'DMD';
@@ -114,7 +117,6 @@ export default function InventoryModule({
     }
   }, [material, jewelType, inventoryItems.length]);
 
-  // Helper to compute sequential Tag Code for Batch Rows (e.g., GLD-RNG-1001 + offset)
   const getBatchRowCode = (baseCode, index) => {
     const clean = (baseCode || '').trim().toUpperCase();
     const match = clean.match(/^(.*?)(\d+)$/);
@@ -125,7 +127,6 @@ export default function InventoryModule({
     return `${prefix}${nextNum}`;
   };
 
-  // Promise-based AI Image Optimizer & Studio Framing
   const optimizeImageToDataUrl = (file, selectedMat, useBackdrop) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -133,7 +134,7 @@ export default function InventoryModule({
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const size = 540;
+          const size = 420;
           canvas.width = size;
           canvas.height = size;
           const ctx = canvas.getContext('2d');
@@ -143,17 +144,15 @@ export default function InventoryModule({
             ctx.fillStyle = theme.bg;
             ctx.fillRect(0, 0, size, size);
             ctx.strokeStyle = theme.border;
-            ctx.lineWidth = 10;
-            ctx.strokeRect(14, 14, size - 28, size - 28);
+            ctx.lineWidth = 8;
+            ctx.strokeRect(10, 10, size - 20, size - 20);
 
-            const pad = 36;
+            const pad = 28;
             const target = size - pad * 2;
             const scale = Math.min(target / img.width, target / img.height);
             const w = img.width * scale;
             const h = img.height * scale;
-            ctx.filter = 'contrast(1.06) saturate(1.08) brightness(1.03)';
             ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-            ctx.filter = 'none';
           } else {
             const scale = Math.min(size / img.width, size / img.height);
             const w = img.width * scale;
@@ -162,7 +161,7 @@ export default function InventoryModule({
             ctx.fillRect(0, 0, size, size);
             ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
           }
-          resolve(canvas.toDataURL('image/jpeg', 0.78));
+          resolve(canvas.toDataURL('image/jpeg', 0.72));
         };
         img.src = ev.target.result;
       };
@@ -170,10 +169,9 @@ export default function InventoryModule({
     });
   };
 
-  // Clean Studio Placeholder Card when a batch row is saved without a photo
   const createStudioPlaceholderCard = (code, selectedMat, typeName) => {
     const canvas = document.createElement('canvas');
-    const size = 400;
+    const size = 360;
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
@@ -183,16 +181,16 @@ export default function InventoryModule({
     ctx.fillRect(0, 0, size, size);
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 8;
-    ctx.strokeRect(14, 14, size - 28, size - 28);
+    ctx.strokeRect(12, 12, size - 24, size - 24);
 
     ctx.fillStyle = selectedMat === 'Gold-Diamond' ? '#0f172a' : '#ffffff';
-    ctx.font = 'bold 24px sans-serif';
+    ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(code, size / 2, size / 2 - 10);
 
-    ctx.font = '16px sans-serif';
-    ctx.fillText(`${selectedMat} • ${typeName}`, size / 2, size / 2 + 22);
-    return canvas.toDataURL('image/jpeg', 0.8);
+    ctx.font = '15px sans-serif';
+    ctx.fillText(`${selectedMat} • ${typeName}`, size / 2, size / 2 + 20);
+    return canvas.toDataURL('image/jpeg', 0.75);
   };
 
   const processSinglePhoto = async (file, selectedMat, useBackdrop) => {
@@ -210,7 +208,6 @@ export default function InventoryModule({
     processSinglePhoto(file, material, aiBackdropOn);
   };
 
-  // Add Custom Jewelry Type
   const handleAddCustomType = () => {
     const clean = newTypeInput.trim();
     if (!clean) return;
@@ -227,21 +224,17 @@ export default function InventoryModule({
     showBanner(`Added new ${material} category: "${clean}"`);
   };
 
-  // Helper to upload dataUrl to Firebase Storage
   const uploadDataUrlToCloud = async (dataUrl, code) => {
     try {
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
+      const blob = dataUrlToBlob(dataUrl);
       const storageRef = ref(storage, `swarnasetu_inventory/${code}_${Date.now()}.jpg`);
       await uploadBytes(storageRef, blob);
       return await getDownloadURL(storageRef);
     } catch (err) {
-      console.warn('Storage upload fallback used:', err);
       return dataUrl;
     }
   };
 
-  // SINGLE ITEM SAVE TO DRAFT
   const handleSaveToDraft = async (e) => {
     e.preventDefault();
     if (!canCreate) return;
@@ -286,7 +279,6 @@ export default function InventoryModule({
     showBanner(`Saved "${newItem.code}" to Draft List!`);
   };
 
-  // BATCH ENTRY HELPERS
   const updateBatchRow = (index, field, val) => {
     setBatchRows(batchRows.map((r, idx) => {
       if (idx !== index) return r;
@@ -333,7 +325,6 @@ export default function InventoryModule({
       return;
     }
 
-    // Check duplicate codes against existing inventory
     const existingCodes = new Set(inventoryItems.map(i => i.code.toUpperCase()));
     const duplicate = validEntries.find(v => existingCodes.has(v.computedCode));
     if (duplicate) {
@@ -369,10 +360,7 @@ export default function InventoryModule({
       });
     }
 
-    // Prepend newest items to inventoryItems
     setInventoryItems([...createdBatch.reverse(), ...inventoryItems]);
-
-    // Reset batch rows to 5 clean rows
     setBatchRows(
       Array.from({ length: 5 }, (_, i) => ({
         key: Date.now() + 100 + i,
@@ -387,7 +375,6 @@ export default function InventoryModule({
     showBanner(`Batch Saved! ${createdBatch.length} ${material} ${jewelType} items added to Drafts & Tags.`);
   };
 
-  // Batch Approve Drafts -> Live Inventory
   const handleApproveDraftsToLive = (idsToApprove) => {
     if (idsToApprove.length === 0) return;
     setInventoryItems(inventoryItems.map(item =>
@@ -475,7 +462,6 @@ export default function InventoryModule({
         </div>
       )}
 
-      {/* White Tile Navigation Pills */}
       <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs flex flex-wrap gap-1.5">
         {[
           ...(canCreate ? [{ id: 'entry', label: '+ Stock Entry', icon: Plus }] : []),
@@ -499,10 +485,8 @@ export default function InventoryModule({
         })}
       </div>
 
-      {/* TAB 1: NEW STOCK ENTRY (SINGLE OR BATCH ENTRY IN ONE GO) */}
       {tab === 'entry' && canCreate && (
         <div className="space-y-4">
-          {/* Mode Switcher Card */}
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <button
@@ -529,7 +513,6 @@ export default function InventoryModule({
             </span>
           </div>
 
-          {/* MODE A: SINGLE ITEM ENTRY */}
           {entryMode === 'single' && (
             <div className="grid lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
@@ -714,7 +697,7 @@ export default function InventoryModule({
                 {processedPreview ? (
                   <div className="space-y-2">
                     <img src={processedPreview} alt="Preview" className="w-56 h-56 object-cover rounded-xl border border-slate-200 shadow-xs mx-auto" />
-                    <p className="text-[11px] text-emerald-700 font-semibold">Compressed & Studio Framed (~80 KB)</p>
+                    <p className="text-[11px] text-emerald-700 font-semibold">Compressed & Studio Framed (~40 KB)</p>
                   </div>
                 ) : (
                   <div className="w-56 h-56 rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 p-4 text-xs">
@@ -726,7 +709,6 @@ export default function InventoryModule({
             </div>
           )}
 
-          {/* MODE B: BATCH ENTRY (CREATE MULTIPLE ITEMS OF SAME TYPE IN ONE GO) */}
           {entryMode === 'batch' && (
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
@@ -740,7 +722,6 @@ export default function InventoryModule({
                 </label>
               </div>
 
-              {/* Common Header Settings for Whole Batch */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
                 <div>
                   <label className="block font-semibold text-slate-600 mb-1">1. Metal *</label>
@@ -820,7 +801,6 @@ export default function InventoryModule({
                 </div>
               </div>
 
-              {/* Multi-Row Batch Input Table */}
               <form onSubmit={handleSaveBatchToDraft} className="space-y-4">
                 <div className="overflow-x-auto border border-slate-200 rounded-xl">
                   <table className="w-full text-left text-xs">
@@ -951,7 +931,6 @@ export default function InventoryModule({
         </div>
       )}
 
-      {/* TAB 2: DRAFTS, BATCH BARCODE PRINTING & APPROVE TO LIVE STOCK */}
       {tab === 'drafts' && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
@@ -1078,7 +1057,6 @@ export default function InventoryModule({
         </div>
       )}
 
-      {/* TAB 3: LIVE VAULT INVENTORY */}
       {tab === 'vault' && (
         <div className="space-y-4">
           {editingItem && canModify && (
@@ -1198,7 +1176,6 @@ export default function InventoryModule({
         </div>
       )}
 
-      {/* TAB 4: DAILY STAFF HANDOVER */}
       {tab === 'handover' && (
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5 space-y-4 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -1282,7 +1259,6 @@ export default function InventoryModule({
         </div>
       )}
 
-      {/* TAB 5: NIGHTLY PHYSICAL STOCK RECONCILIATION */}
       {tab === 'audit' && (
         <div className="grid lg:grid-cols-3 gap-4 text-xs">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
