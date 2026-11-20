@@ -15,18 +15,16 @@ export default function CrmUdhaariModule({
 
   const [banner, setBanner] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'udhaari' | 'advance'
+  const [filterMode, setFilterMode] = useState('all');
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
-  // Add Customer Form State
   const [custName, setCustName] = useState('');
   const [custMobile, setCustMobile] = useState('');
   const [custCity, setCustCity] = useState('Ajmer');
   const [custOccasion, setCustOccasion] = useState('');
 
-  // Ledger Entry Form State
   const [entryCustomerId, setEntryCustomerId] = useState('');
-  const [entryType, setEntryType] = useState('udhaari_add'); // 'udhaari_add' | 'payment_in' | 'advance_add' | 'advance_use'
+  const [entryType, setEntryType] = useState('udhaari_add');
   const [entryAmount, setEntryAmount] = useState('');
   const [entryPayMode, setEntryPayMode] = useState('UPI / Bank');
   const [entryNote, setEntryNote] = useState('');
@@ -36,7 +34,6 @@ export default function CrmUdhaariModule({
     setTimeout(() => setBanner(''), 4000);
   };
 
-  // Merge explicit CRM records with any customer names from generated invoices
   const customers = useMemo(() => {
     const map = new Map();
 
@@ -64,7 +61,7 @@ export default function CrmUdhaariModule({
           mobile,
           city: 'Ajmer',
           occasion: '',
-          balance: 0, // Positive = Customer owes Udhaari (₹), Negative = Showroom holds Customer Advance (₹)
+          balance: 0,
           transactions: []
         });
       }
@@ -224,7 +221,6 @@ export default function CrmUdhaariModule({
         </div>
       )}
 
-      {/* Top Summary Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
           <div className="text-[11px] text-slate-500">Total Customers</div>
@@ -246,7 +242,6 @@ export default function CrmUdhaariModule({
         </div>
       </div>
 
-      {/* Left Column: Add Customer + Khata Entry */}
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="space-y-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
@@ -370,7 +365,6 @@ export default function CrmUdhaariModule({
           </div>
         </div>
 
-        {/* Right 2 Columns: Customer Directory + Selected Ledger Detail */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -470,11 +464,54 @@ export default function CrmUdhaariModule({
             </div>
           </div>
 
-          {/* Selected Customer Passbook / History */}
           {activeCustomer && (
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
               <div className="flex flex-wrap justify-between items-center gap-2 pb-2.5 border-b border-slate-100">
                 <div>
                   <h4 className="text-sm font-bold text-slate-900">{activeCustomer.name} — Khata Passbook</h4>
                   <p className="text-[11px] text-slate-500">
-                    Mobile: <strong>{activeCustomer.mobile || '
+                    Mobile: <strong>{activeCustomer.mobile || 'N/A'}</strong> • City: <strong>{activeCustomer.city || 'Ajmer'}</strong>
+                  </p>
+                </div>
+                <div className="text-sm font-bold">
+                  Net Balance:{' '}
+                  <span className={(Number(activeCustomer.balance) || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}>
+                    {(Number(activeCustomer.balance) || 0) > 0
+                      ? `₹${Number(activeCustomer.balance).toLocaleString('en-IN')} Due`
+                      : (Number(activeCustomer.balance) || 0) < 0
+                      ? `₹${Math.abs(Number(activeCustomer.balance)).toLocaleString('en-IN')} Advance`
+                      : '₹0'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                {(activeCustomer.transactions || []).map((t) => {
+                  const isAddDue = t.type === 'udhaari_add' || t.type === 'advance_use';
+                  return (
+                    <div key={t.id} className="py-2 flex justify-between items-center gap-2">
+                      <div>
+                        <div className="font-semibold text-slate-900">{t.label}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {t.date} • {t.payMode} • {t.note}
+                        </div>
+                      </div>
+                      <div className={`font-bold inline-flex items-center gap-0.5 ${isAddDue ? 'text-red-700' : 'text-emerald-700'}`}>
+                        {isAddDue ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
+                        ₹{Number(t.amount || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  );
+                })}
+                {(!activeCustomer.transactions || activeCustomer.transactions.length === 0) && (
+                  <div className="py-5 text-center text-slate-400">No ledger entries recorded yet for this customer.</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+// END OF FILE
