@@ -831,4 +831,136 @@ export default function SalesBillingModule({
                     <div className="mt-2 pt-2 border-t border-slate-200/70">
                       {confirmClearId === item.id ? (
                         <div className="flex gap-1">
-                          <button type="button" onClick={() => handleClearSoldPhoto(item.id)} className="flex-
+                          <button type="button" onClick={() => handleClearSoldPhoto(item.id)} className="flex-1 py-1 bg-red-600 text-white rounded text-[10px] font-bold">Yes, Delete</button>
+                          <button type="button" onClick={() => setConfirmClearId(null)} className="px-2 py-1 bg-white border rounded text-[10px]">No</button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmClearId(item.id)}
+                          className="w-full py-1 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded text-[10px] inline-flex items-center justify-center gap-1"
+                        >
+                          <Trash2 size={11} /> Delete Sold Photo
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {soldStock.length === 0 && (
+                <div className="col-span-full text-center text-slate-400 py-6">No sold items archived yet.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto p-5 shadow-xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 print:hidden">
+              <h3 className="text-sm font-bold text-slate-900">Tax Invoice Preview (Issues 2 Copies)</h3>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1"
+                >
+                  <Printer size={13} /> Print 2 Copies / Save PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSendWhatsApp(viewingInvoice)}
+                  className="px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1"
+                >
+                  <MessageCircle size={13} /> Send on WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingInvoice(null)}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {['ORIGINAL FOR CUSTOMER', 'DUPLICATE FOR SHOWROOM'].map((copyLabel, copyIdx) => (
+              <div key={copyLabel} className={`p-5 border border-slate-300 rounded-xl text-xs space-y-3 bg-white ${copyIdx === 1 ? 'mt-6 border-dashed' : ''}`}>
+                <div className="flex justify-between items-start border-b border-slate-200 pb-3">
+                  <div>
+                    <div className="text-base font-bold text-slate-900">SWARNASETU JEWELLERS</div>
+                    <div className="text-[11px] text-slate-500">Tax Invoice • GST Compliant Jewelry Bill</div>
+                  </div>
+                  <div className="text-right">
+                    <span className="px-2 py-0.5 bg-slate-100 border border-slate-300 rounded text-[10px] font-bold">{copyLabel}</span>
+                    <div className="font-bold text-slate-900 mt-1">Invoice: {viewingInvoice.invoiceNo}</div>
+                    <div className="text-[11px] text-slate-500">Date: {viewingInvoice.date} • {viewingInvoice.time}</div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap justify-between gap-2 text-[11px] bg-slate-50 p-2.5 rounded-lg">
+                  <div>Billed To: <strong className="text-slate-900">{viewingInvoice.customerName}</strong> {viewingInvoice.customerMobile ? `(${viewingInvoice.customerMobile})` : ''}</div>
+                  <div>Payment Mode: <strong className="text-slate-900">{viewingInvoice.paymentMode}</strong></div>
+                </div>
+
+                <table className="w-full text-left border border-slate-300">
+                  <thead className="bg-slate-100 border-b border-slate-300 text-[11px]">
+                    <tr>
+                      <th className="p-2 border-r border-slate-300 w-12">S.No.</th>
+                      <th className="p-2 border-r border-slate-300">Item Description & Photo</th>
+                      <th className="p-2 border-r border-slate-300">Weight</th>
+                      <th className="p-2 border-r border-slate-300">Rate (/g)</th>
+                      <th className="p-2 text-right">Making Charges</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {viewingInvoice.items.map((item, idx) => (
+                      <tr key={item.id}>
+                        <td className="p-2 border-r border-slate-300 align-top font-bold">{idx + 1}</td>
+                        <td className="p-2 border-r border-slate-300">
+                          <div className="font-bold text-slate-900">{item.code} — {item.material} {item.type} ({item.purity})</div>
+                          {item.alterationNote && (
+                            <div className="text-[10px] font-semibold text-slate-700 mt-0.5">Amendment: {item.alterationNote}</div>
+                          )}
+                          <div className="text-[10px] text-slate-500 mb-1.5">Metal Value: ₹{item.metalValue.toLocaleString('en-IN')}</div>
+                          {item.imageUrl && (
+                            <img src={item.imageUrl} alt={item.code} className="w-14 h-14 object-cover rounded border border-slate-300" />
+                          )}
+                        </td>
+                        <td className="p-2 border-r border-slate-300 align-top font-semibold">
+                          Net: {item.netWeight}g
+                          <div className="text-[10px] text-slate-500">Gross: {item.grossWeight}g</div>
+                        </td>
+                        <td className="p-2 border-r border-slate-300 align-top font-semibold">₹{item.lockedRate.toLocaleString('en-IN')}</td>
+                        <td className="p-2 align-top text-right font-semibold">₹{item.finalMaking.toLocaleString('en-IN')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="flex justify-end">
+                  <div className="w-64 space-y-1 text-right text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Taxable Subtotal:</span>
+                      <strong>₹{viewingInvoice.subTotal.toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>GST (3%):</span>
+                      <strong>₹{viewingInvoice.gstAmount.toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold text-slate-900 pt-1 border-t border-slate-300">
+                      <span>Grand Total:</span>
+                      <span>₹{viewingInvoice.grandTotal.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// END OF FILE
