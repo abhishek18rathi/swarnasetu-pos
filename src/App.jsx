@@ -11,6 +11,7 @@ import InventoryModule from './modules/InventoryModule';
 import SalesBillingModule from './modules/SalesBillingModule';
 import KarigarMelterModule from './modules/KarigarMelterModule';
 import CrmUdhaariModule from './modules/CrmUdhaariModule';
+import AccountsRojmelModule from './modules/AccountsRojmelModule';
 
 const DEFAULT_ADMIN = {
   id: 'sonu', pass: '@4266@', name: 'Sonu (Master Admin)', role: 'Admin',
@@ -29,7 +30,7 @@ const MODULES = [
   { id: 'billing', title: 'Sales & Billing', desc: 'Estimates, Discounts & GST Bill', icon: ShoppingCart, color: 'text-blue-600 bg-blue-50', ready: true },
   { id: 'karigar', title: 'Karigar & Melter', desc: 'Melting, Repairs & Amendments', icon: Hammer, color: 'text-amber-600 bg-amber-50', ready: true },
   { id: 'crm', title: 'CRM & Udhaari', desc: 'Customer Khata & Advances', icon: BookOpen, color: 'text-emerald-600 bg-emerald-50', ready: true },
-  { id: 'accounts', title: 'Accounts & Rojmel', desc: 'Daily Cash Drawer & Expenses', icon: Wallet, color: 'text-purple-600 bg-purple-50', ready: false },
+  { id: 'accounts', title: 'Accounts & Rojmel', desc: 'Daily Cash Drawer & Expenses', icon: Wallet, color: 'text-purple-600 bg-purple-50', ready: true },
   { id: 'barcode', title: 'Barcode & Tags', desc: 'Batch Thermal Tag Printing', icon: Printer, color: 'text-slate-700 bg-slate-100', ready: false },
   { id: 'kitty', title: 'Kitty Schemes', desc: 'Admin Rules & Monthly Installments', icon: Gift, color: 'text-pink-600 bg-pink-50', ready: false },
   { id: 'exports', title: 'Tally & Excel', desc: 'CA Reports & Tally XML Export', icon: FileSpreadsheet, color: 'text-green-700 bg-green-50', ready: false },
@@ -65,6 +66,10 @@ export default function App() {
 
   const [customerLedger, setCustomerLedger] = useState([]);
 
+  const [rojmelEntries, setRojmelEntries] = useState([]);
+  const [openingCashMap, setOpeningCashMap] = useState({});
+  const [dayLocks, setDayLocks] = useState({});
+
   useEffect(() => {
     const docRef = doc(db, 'swarnasetu_cloud', 'erp_master_v2');
     const unsub = onSnapshot(docRef, (snap) => {
@@ -85,6 +90,9 @@ export default function App() {
         if (d.karigarLedger) setKarigarLedger(d.karigarLedger);
         if (d.repairJobs) setRepairJobs(d.repairJobs);
         if (d.customerLedger) setCustomerLedger(d.customerLedger);
+        if (d.rojmelEntries) setRojmelEntries(d.rojmelEntries);
+        if (d.openingCashMap) setOpeningCashMap(d.openingCashMap);
+        if (d.dayLocks) setDayLocks(d.dayLocks);
       }
       setIsLoaded(true);
     });
@@ -328,7 +336,21 @@ export default function App() {
           />
         )}
 
-        {!['dashboard', 'payroll', 'inventory', 'billing', 'karigar', 'crm', 'rates'].includes(activeModule) && (
+        {activeModule === 'accounts' && (
+          <AccountsRojmelModule
+            currentUser={currentUser}
+            rojmelEntries={rojmelEntries}
+            setRojmelEntries={(v) => { setRojmelEntries(v); syncToCloud({ rojmelEntries: v }); }}
+            openingCashMap={openingCashMap}
+            setOpeningCashMap={(v) => { setOpeningCashMap(v); syncToCloud({ openingCashMap: v }); }}
+            dayLocks={dayLocks}
+            setDayLocks={(v) => { setDayLocks(v); syncToCloud({ dayLocks: v }); }}
+            invoices={invoices}
+            customerLedger={customerLedger}
+          />
+        )}
+
+        {!['dashboard', 'payroll', 'inventory', 'billing', 'karigar', 'crm', 'accounts', 'rates'].includes(activeModule) && (
           <div className="bg-white rounded-2xl border border-slate-200/80 p-10 text-center max-w-md mx-auto">
             <h3 className="text-sm font-bold text-slate-900 capitalize">{activeModule} Module</h3>
             <p className="text-xs text-slate-500 mt-1">Module slot ready. Say "Build {activeModule}" when you want to activate this file.</p>
