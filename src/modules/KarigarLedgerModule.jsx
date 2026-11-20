@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   Scale, UserPlus, ArrowUpRight, ArrowDownLeft,
-  Wallet, CheckCircle2, X, Flame
+  Wallet, CheckCircle2, X, PackageCheck, Send, Gem
 } from 'lucide-react';
 
 const DEFAULT_TOUCH_BY_PURITY = {
@@ -30,27 +30,35 @@ export default function KarigarLedgerModule({
   // Add Karigar Form
   const [newKarigarName, setNewKarigarName] = useState('');
   const [newKarigarMobile, setNewKarigarMobile] = useState('');
-  const [newKarigarSpecialty, setNewKarigarSpecialty] = useState('Gold & Silver');
+  const [newKarigarSpecialty, setNewKarigarSpecialty] = useState('Gold, Silver & Stones');
 
-  // Metal Issue & Return / Making Entry Form
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
-  const [metalType, setMetalType] = useState('Gold'); // 'Gold' | 'Silver'
-  const [purityLabel, setPurityLabel] = useState('22K');
-  const [touchPct, setTouchPct] = useState('91.6');
-  const [issuedWt, setIssuedWt] = useState('100');
-  const [returnedOrnamentWt, setReturnedOrnamentWt] = useState('10');
-  const [returnedScrapWt, setReturnedScrapWt] = useState('0');
-  const [markJobSettled, setMarkJobSettled] = useState(false);
+  // STEP 1: Issue Metal + Diamonds/Stones Form
+  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [issueMetal, setIssueMetal] = useState('Gold');
+  const [issuePurity, setIssuePurity] = useState('22K');
+  const [issueTouch, setIssueTouch] = useState('91.6');
+  const [issueWt, setIssueWt] = useState('100');
+  const [stoneType, setStoneType] = useState('Diamond');
+  const [stoneGivenCt, setStoneGivenCt] = useState('0');
+  const [issueNote, setIssueNote] = useState('');
 
-  // Separate Making Charge Calculator (Gold & Silver tracked independently)
+  // STEP 2: Receive Made Piece + Diamonds/Stones Taken & Difference Tally State
+  const [selectedOpenIssueId, setSelectedOpenIssueId] = useState('');
+  const [recvOrnamentWt, setRecvOrnamentWt] = useState('');
+  const [recvScrapWt, setRecvScrapWt] = useState('0');
+  const [recvTouchPct, setRecvTouchPct] = useState('');
+  const [stoneTakenCt, setStoneTakenCt] = useState('0');
+  const [stoneLossCt, setStoneLossCt] = useState('0');
+
   const [makingCalcMode, setMakingCalcMode] = useState('per_gram'); // 'per_gram' | 'percent' | 'flat'
-  const [makingRateInput, setMakingRateInput] = useState('450'); // ₹/g or % or flat ₹
-  const [makingBasisWt, setMakingBasisWt] = useState('10'); // e.g. finished ornament weight (10g)
-  const [jobNote, setJobNote] = useState('');
+  const [makingRateInput, setMakingRateInput] = useState('450');
+  const [makingBasisWt, setMakingBasisWt] = useState('');
+  const [closeOpenIssue, setCloseOpenIssue] = useState(true);
+  const [recvRemarks, setRecvRemarks] = useState('');
 
-  // Karigar Making Payout Form
+  // Making Payout Form
   const [payAmount, setPayAmount] = useState('');
-  const [payMode, setPayMode] = useState('Cash'); // 'Cash' | 'UPI / Bank' | 'Advance Adjust'
+  const [payMode, setPayMode] = useState('Cash');
   const [payNote, setPayNote] = useState('');
   const [syncCashToRojmel, setSyncCashToRojmel] = useState(true);
 
@@ -65,6 +73,19 @@ export default function KarigarLedgerModule({
   const entriesForKarigar = useMemo(() => {
     return (karigarMetalEntries || []).filter((e) => e.karigarId === activeKarigarId);
   }, [karigarMetalEntries, activeKarigarId]);
+
+  const openIssuesForKarigar = useMemo(() => {
+    return entriesForKarigar.filter(
+      (e) =>
+        e.entryKind === 'issue' &&
+        ((Number(e.remainingWt) || 0) > 0 || (Number(e.remainingStoneCt) || 0) > 0)
+    );
+  }, [entriesForKarigar]);
+
+  const activeOpenIssue =
+    openIssuesForKarigar.find((i) => String(i.id) === String(selectedOpenIssueId)) ||
+    openIssuesForKarigar[0] ||
+    null;
 
   if (!hasAccess) {
     return (
@@ -92,72 +113,168 @@ export default function KarigarLedgerModule({
     showBanner(`Karigar "${created.name}" added.`);
   };
 
-  // Live preview of current job entry
-  const issuedG = Math.max(0, parseFloat(issuedWt) || 0);
-  const ornG = Math.max(0, parseFloat(returnedOrnamentWt) || 0);
-  const scrapG = Math.max(0, parseFloat(returnedScrapWt) || 0);
-  const totalReturnedG = Math.round((ornG + scrapG) * 1000) / 1000;
-  const balanceWithKarigarG = Math.round((issuedG - totalReturnedG) * 1000) / 1000;
-  const touchVal = Math.max(0, Math.min(100, parseFloat(touchPct) || 0));
-  const fineIssuedG = Math.round(issuedG * (touchVal / 100) * 1000) / 1000;
-  const fineReturnedG = Math.round(totalReturnedG * (touchVal / 100) * 1000) / 1000;
-  const diffMetalG = markJobSettled ? Math.round((issuedG - totalReturnedG) * 1000) / 1000 : 0;
+  // STEP 1: Issue Metal + Diamonds/Other Stones to Karigar
+  const handleIssueMetalAndStones = (e) => {
+    e.preventDefault();
+    if (!activeKarigar) return showBanner('Select or add a Karigar first.');
+    const wt = Math.max(0, parseFloat(issueWt) || 0);
+    const sGiven = Math.max(0, parseFloat(stoneGivenCt) || 0);
+    if (wt <= 0 && sGiven <= 0) {
+      return showBanner('Enter Issued Metal Weight (g) or Diamond/Stone Weight (ct).');
+    }
+
+    const touch = Math.max(0, Math.min(100, parseFloat(issueTouch) || 0));
+    const fineIssued = Math.round(wt * (touch / 100) * 1000) / 1000;
+
+    const issueRow = {
+      id: Date.now(),
+      karigarId: activeKarigar.id,
+      karigarName: activeKarigar.name,
+      date: issueDate,
+      entryKind: 'issue',
+      metal: issueMetal,
+      purity: issuePurity,
+      touchPct: touch,
+      issuedWt: wt,
+      remainingWt: wt,
+      fineWt: fineIssued,
+      stoneType: stoneType.trim() || 'Diamond/Stone',
+      stoneGivenCt: sGiven,
+      remainingStoneCt: sGiven,
+      makingChargeRs: 0,
+      note:
+        issueNote.trim() ||
+        `Issued ${wt}g ${issuePurity} ${issueMetal}${sGiven > 0 ? ` + ${sGiven}ct ${stoneType}` : ''}`
+    };
+
+    setKarigarMetalEntries([issueRow, ...(karigarMetalEntries || [])]);
+    setSelectedOpenIssueId(String(issueRow.id));
+    setStoneGivenCt('0');
+    setIssueNote('');
+    showBanner(
+      `Issued ${wt}g ${issueMetal}${sGiven > 0 ? ` & ${sGiven}ct ${stoneType}` : ''} to ${activeKarigar.name}.`
+    );
+  };
+
+  // STEP 2 Live Calculations for Receive & Difference Tally (Metal + Stones)
+  const effectiveTouch =
+    recvTouchPct !== '' && !isNaN(parseFloat(recvTouchPct))
+      ? Math.max(0, Math.min(100, parseFloat(recvTouchPct)))
+      : activeOpenIssue
+      ? Number(activeOpenIssue.touchPct) || 91.6
+      : 91.6;
+
+  const effectiveMetal = activeOpenIssue ? activeOpenIssue.metal : issueMetal;
+  const effectivePurity = activeOpenIssue ? activeOpenIssue.purity : issuePurity;
+  const effectiveStoneType = activeOpenIssue?.stoneType || stoneType || 'Diamond/Stone';
+
+  const openRemainingG = activeOpenIssue ? Number(activeOpenIssue.remainingWt) || 0 : 0;
+  const openRemainingStoneCt = activeOpenIssue ? Number(activeOpenIssue.remainingStoneCt) || 0 : 0;
+
+  const madeOrnG = Math.max(0, parseFloat(recvOrnamentWt) || 0);
+  const madeScrapG = Math.max(0, parseFloat(recvScrapWt) || 0);
+  const totalRecvdG = Math.round((madeOrnG + madeScrapG) * 1000) / 1000;
+
+  const sTaken = Math.max(0, parseFloat(stoneTakenCt) || 0);
+  const sLoss = Math.max(0, parseFloat(stoneLossCt) || 0);
+  const totalStoneAccountedCt = Math.round((sTaken + sLoss) * 1000) / 1000;
+  const stoneDiffCt = activeOpenIssue
+    ? Math.round((openRemainingStoneCt - totalStoneAccountedCt) * 1000) / 1000
+    : 0;
+
+  const diffAgainstIssueG = activeOpenIssue
+    ? Math.round((openRemainingG - totalRecvdG) * 1000) / 1000
+    : 0;
+
+  const fineRecvdG = Math.round(totalRecvdG * (effectiveTouch / 100) * 1000) / 1000;
+  const fineDiffG = activeOpenIssue
+    ? Math.round((openRemainingG * ((Number(activeOpenIssue.touchPct) || 91.6) / 100) - fineRecvdG) * 1000) / 1000
+    : 0;
 
   const metalRateForCalc =
-    metalType === 'Silver'
+    effectiveMetal === 'Silver'
       ? Number(liveRates?.silver) || 92
-      : purityLabel === '24K'
+      : effectivePurity === '24K'
       ? Number(liveRates?.gold24) || 7850
-      : purityLabel === '18K'
+      : effectivePurity === '18K'
       ? Number(liveRates?.gold18) || 5950
       : Number(liveRates?.gold22) || 7250;
 
-  const basisG = Math.max(0, parseFloat(makingBasisWt) || ornG || 0);
+  const basisWtVal =
+    makingBasisWt !== '' && !isNaN(parseFloat(makingBasisWt))
+      ? Math.max(0, parseFloat(makingBasisWt))
+      : madeOrnG;
   const mRateVal = Math.max(0, parseFloat(makingRateInput) || 0);
 
   const calculatedMakingRs = useMemo(() => {
     if (makingCalcMode === 'flat') return Math.round(mRateVal * 100) / 100;
     if (makingCalcMode === 'percent') {
-      const metalAmt = basisG * metalRateForCalc;
-      return Math.round(metalAmt * (mRateVal / 100) * 100) / 100;
+      return Math.round(basisWtVal * metalRateForCalc * (mRateVal / 100) * 100) / 100;
     }
-    return Math.round(basisG * mRateVal * 100) / 100;
-  }, [makingCalcMode, mRateVal, basisG, metalRateForCalc]);
+    return Math.round(basisWtVal * mRateVal * 100) / 100;
+  }, [makingCalcMode, mRateVal, basisWtVal, metalRateForCalc]);
 
-  const handleRecordJobEntry = (e) => {
+  const handleReceiveAndTally = (e) => {
     e.preventDefault();
-    if (!activeKarigar) return showBanner('Select or add a Karigar first.');
-    if (issuedG <= 0 && calculatedMakingRs <= 0) {
-      return showBanner('Enter Issued Weight or Making Charge amount.');
+    if (!activeKarigar) return;
+    if (totalRecvdG <= 0 && totalStoneAccountedCt <= 0 && calculatedMakingRs <= 0) {
+      return showBanner('Enter Made Wt, Stone Taken Wt, or Making Charge.');
     }
 
-    const row = {
+    const today = new Date().toISOString().slice(0, 10);
+    const lockedMetalDiff = closeOpenIssue ? diffAgainstIssueG : 0;
+    const lockedStoneDiff = closeOpenIssue ? stoneDiffCt : 0;
+
+    const receiveRow = {
       id: Date.now(),
       karigarId: activeKarigar.id,
       karigarName: activeKarigar.name,
-      date: entryDate,
-      entryKind: 'job',
-      metal: metalType,
-      purity: purityLabel,
-      touchPct: touchVal,
-      issuedWt: issuedG,
-      ornamentWt: ornG,
-      scrapWt: scrapG,
-      totalReturnedWt: totalReturnedG,
-      balanceWithKarigarWt: markJobSettled ? 0 : balanceWithKarigarG,
-      diffMetalWt: diffMetalG, // + means loss/shortage, - means gain/excess
-      makingCalcMode,
-      makingRateInput: mRateVal,
-      makingBasisWt: basisG,
+      linkedIssueId: activeOpenIssue ? activeOpenIssue.id : null,
+      date: today,
+      entryKind: 'receive',
+      metal: effectiveMetal,
+      purity: effectivePurity,
+      touchPct: effectiveTouch,
+      ornamentWt: madeOrnG,
+      scrapWt: madeScrapG,
+      totalReturnedWt: totalRecvdG,
+      fineWt: fineRecvdG,
+      diffMetalWt: lockedMetalDiff,
+      fineDiffWt: closeOpenIssue ? fineDiffG : 0,
+      stoneType: effectiveStoneType,
+      stoneTakenCt: sTaken,
+      stoneLossCt: sLoss,
+      stoneDiffCt: lockedStoneDiff,
       makingChargeRs: calculatedMakingRs,
-      note: jobNote.trim() || `${purityLabel} ${metalType} job (${ornG}g returned of ${issuedG}g issued)`
+      note:
+        recvRemarks.trim() ||
+        `Recvd ${madeOrnG}g made (${madeScrapG}g scrap)${sTaken > 0 ? ` + ${sTaken}ct ${effectiveStoneType}` : ''}`
     };
 
-    setKarigarMetalEntries([row, ...(karigarMetalEntries || [])]);
-    setReturnedOrnamentWt('0');
-    setReturnedScrapWt('0');
-    setJobNote('');
-    showBanner(`Recorded ${metalType} job for ${activeKarigar.name} • Making: ₹${calculatedMakingRs.toLocaleString('en-IN')}.`);
+    const nextEntries = (karigarMetalEntries || []).map((item) => {
+      if (!activeOpenIssue || item.id !== activeOpenIssue.id) return item;
+      if (closeOpenIssue) {
+        return { ...item, remainingWt: 0, remainingStoneCt: 0, closedDate: today };
+      }
+      const nextRemWt = Math.max(0, Math.round((Number(item.remainingWt) - totalRecvdG) * 1000) / 1000);
+      const nextRemStone = Math.max(
+        0,
+        Math.round((Number(item.remainingStoneCt || 0) - totalStoneAccountedCt) * 1000) / 1000
+      );
+      return { ...item, remainingWt: nextRemWt, remainingStoneCt: nextRemStone };
+    });
+
+    setKarigarMetalEntries([receiveRow, ...nextEntries]);
+    setRecvOrnamentWt('');
+    setRecvScrapWt('0');
+    setRecvTouchPct('');
+    setStoneTakenCt('0');
+    setStoneLossCt('0');
+    setMakingBasisWt('');
+    setRecvRemarks('');
+    showBanner(
+      `Tally saved • Metal Diff: ${lockedMetalDiff}g • Stone Diff: ${lockedStoneDiff}ct • Making: ₹${calculatedMakingRs.toLocaleString('en-IN')}.`
+    );
   };
 
   const handleRecordPayment = (e) => {
@@ -173,15 +290,17 @@ export default function KarigarLedgerModule({
       karigarName: activeKarigar.name,
       date: today,
       entryKind: 'payout',
-      metal: metalType,
-      purity: purityLabel,
-      touchPct: touchVal,
-      issuedWt: 0,
+      metal: issueMetal,
+      purity: issuePurity,
+      touchPct: 0,
       ornamentWt: 0,
       scrapWt: 0,
       totalReturnedWt: 0,
-      balanceWithKarigarWt: 0,
+      fineWt: 0,
       diffMetalWt: 0,
+      stoneTakenCt: 0,
+      stoneLossCt: 0,
+      stoneDiffCt: 0,
       makingChargeRs: -amt,
       payMode,
       note: payNote.trim() || `Making payout (${payMode})`
@@ -211,35 +330,62 @@ export default function KarigarLedgerModule({
     showBanner(`Recorded ₹${amt.toLocaleString('en-IN')} making payment to ${activeKarigar.name}.`);
   };
 
-  // Compute Gold & Silver totals for active Karigar
   const karigarSummary = useMemo(() => {
-    const goldJobs = entriesForKarigar.filter((e) => e.entryKind === 'job' && e.metal === 'Gold');
-    const silverJobs = entriesForKarigar.filter((e) => e.entryKind === 'job' && e.metal === 'Silver');
+    const goldOpenWt =
+      Math.round(
+        entriesForKarigar
+          .filter((e) => e.entryKind === 'issue' && e.metal === 'Gold')
+          .reduce((s, e) => s + Number(e.remainingWt || 0), 0) * 1000
+      ) / 1000;
 
-    const goldIssued = Math.round(goldJobs.reduce((s, e) => s + Number(e.issuedWt || 0), 0) * 1000) / 1000;
-    const goldReturned = Math.round(goldJobs.reduce((s, e) => s + Number(e.totalReturnedWt || 0), 0) * 1000) / 1000;
-    const goldBalWithKarigar = Math.round((goldIssued - goldReturned) * 1000) / 1000;
-    const goldDiff = Math.round(goldJobs.reduce((s, e) => s + Number(e.diffMetalWt || 0), 0) * 1000) / 1000;
-    const goldMakingTotal = Math.round(goldJobs.reduce((s, e) => s + Number(e.makingChargeRs || 0), 0) * 100) / 100;
+    const silverOpenWt =
+      Math.round(
+        entriesForKarigar
+          .filter((e) => e.entryKind === 'issue' && e.metal === 'Silver')
+          .reduce((s, e) => s + Number(e.remainingWt || 0), 0) * 1000
+      ) / 1000;
 
-    const silverIssued = Math.round(silverJobs.reduce((s, e) => s + Number(e.issuedWt || 0), 0) * 1000) / 1000;
-    const silverReturned = Math.round(silverJobs.reduce((s, e) => s + Number(e.totalReturnedWt || 0), 0) * 1000) / 1000;
-    const silverBalWithKarigar = Math.round((silverIssued - silverReturned) * 1000) / 1000;
-    const silverDiff = Math.round(silverJobs.reduce((s, e) => s + Number(e.diffMetalWt || 0), 0) * 1000) / 1000;
-    const silverMakingTotal = Math.round(silverJobs.reduce((s, e) => s + Number(e.makingChargeRs || 0), 0) * 100) / 100;
+    const stoneOpenCt =
+      Math.round(
+        entriesForKarigar
+          .filter((e) => e.entryKind === 'issue')
+          .reduce((s, e) => s + Number(e.remainingStoneCt || 0), 0) * 1000
+      ) / 1000;
 
-    const totalMakingEarned = Math.round((goldMakingTotal + silverMakingTotal) * 100) / 100;
-    const totalMakingPaid = Math.round(
-      entriesForKarigar
-        .filter((e) => e.entryKind === 'payout')
-        .reduce((s, e) => s + Math.abs(Number(e.makingChargeRs || 0)), 0) * 100
-    ) / 100;
+    const stoneDiffTotalCt =
+      Math.round(
+        entriesForKarigar
+          .filter((e) => e.entryKind === 'receive')
+          .reduce((s, e) => s + Number(e.stoneDiffCt || 0), 0) * 1000
+      ) / 1000;
+
+    const goldMakingEarned =
+      Math.round(
+        entriesForKarigar
+          .filter((e) => e.entryKind === 'receive' && e.metal === 'Gold')
+          .reduce((s, e) => s + Number(e.makingChargeRs || 0), 0) * 100
+      ) / 100;
+
+    const silverMakingEarned =
+      Math.round(
+        entriesForKarigar
+          .filter((e) => e.entryKind === 'receive' && e.metal === 'Silver')
+          .reduce((s, e) => s + Number(e.makingChargeRs || 0), 0) * 100
+      ) / 100;
+
+    const totalMakingEarned = Math.round((goldMakingEarned + silverMakingEarned) * 100) / 100;
+    const totalMakingPaid =
+      Math.round(
+        entriesForKarigar
+          .filter((e) => e.entryKind === 'payout')
+          .reduce((s, e) => s + Math.abs(Number(e.makingChargeRs || 0)), 0) * 100
+      ) / 100;
+
     const pendingMakingDue = Math.round((totalMakingEarned - totalMakingPaid) * 100) / 100;
 
     return {
-      goldIssued, goldReturned, goldBalWithKarigar, goldDiff, goldMakingTotal,
-      silverIssued, silverReturned, silverBalWithKarigar, silverDiff, silverMakingTotal,
-      totalMakingEarned, totalMakingPaid, pendingMakingDue
+      goldOpenWt, silverOpenWt, stoneOpenCt, stoneDiffTotalCt,
+      goldMakingEarned, silverMakingEarned, totalMakingEarned, totalMakingPaid, pendingMakingDue
     };
   }, [entriesForKarigar]);
 
@@ -256,10 +402,13 @@ export default function KarigarLedgerModule({
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
           <Scale size={17} className="text-amber-600" />
-          <span className="font-bold text-slate-900 text-sm">Karigar Gold/Silver & Making Ledger</span>
+          <span className="font-bold text-slate-900 text-sm">Karigar Metal, Stones & Making Ledger</span>
           <select
             value={activeKarigarId}
-            onChange={(e) => setSelectedKarigarId(e.target.value)}
+            onChange={(e) => {
+              setSelectedKarigarId(e.target.value);
+              setSelectedOpenIssueId('');
+            }}
             className="px-3 py-1.5 border border-slate-200 rounded-lg font-bold bg-slate-50"
           >
             {(karigarList || []).map((k) => (
@@ -290,9 +439,9 @@ export default function KarigarLedgerModule({
             onChange={(e) => setNewKarigarSpecialty(e.target.value)}
             className="px-2.5 py-1.5 border border-slate-200 rounded-lg"
           >
+            <option value="Gold, Silver & Stones">Gold, Silver & Stones</option>
+            <option value="Diamond & Stone Setting">Diamond & Stone Setting</option>
             <option value="Gold & Silver">Gold & Silver</option>
-            <option value="Gold Only">Gold Only</option>
-            <option value="Silver Only">Silver Only</option>
           </select>
           <button type="submit" className="px-3 py-1.5 bg-slate-900 text-white font-semibold rounded-lg inline-flex items-center gap-1">
             <UserPlus size={13} /> Add Karigar
@@ -300,33 +449,29 @@ export default function KarigarLedgerModule({
         </form>
       </div>
 
-      {/* Separate Gold & Silver Summary Cards */}
+      {/* Summary Cards: Gold, Silver, Diamonds/Stones, Making Due */}
       {activeKarigar && (
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-white p-4 rounded-2xl border border-amber-200 shadow-2xs space-y-1">
-            <div className="text-[11px] font-bold text-amber-800">GOLD ACCOUNT ({activeKarigar.name})</div>
-            <div className="text-sm font-bold text-slate-900">With Karigar: {karigarSummary.goldBalWithKarigar} g</div>
-            <div className="text-[10px] text-slate-500">
-              Issued: {karigarSummary.goldIssued}g • Returned: {karigarSummary.goldReturned}g • Diff: {karigarSummary.goldDiff}g
+            <div className="text-[11px] font-bold text-amber-800">GOLD & SILVER OPEN</div>
+            <div className="text-sm font-bold text-slate-900">
+              Gold: {karigarSummary.goldOpenWt}g • Silver: {karigarSummary.silverOpenWt}g
             </div>
-            <div className="text-[11px] font-semibold text-amber-900 pt-0.5">
-              Gold Making Total: ₹{karigarSummary.goldMakingTotal.toLocaleString('en-IN')}
+            <div className="text-[11px] text-slate-600">
+              Gold Making: <strong>₹{karigarSummary.goldMakingEarned.toLocaleString('en-IN')}</strong> • Silver: <strong>₹{karigarSummary.silverMakingEarned.toLocaleString('en-IN')}</strong>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
-            <div className="text-[11px] font-bold text-slate-700">SILVER ACCOUNT ({activeKarigar.name})</div>
-            <div className="text-sm font-bold text-slate-900">With Karigar: {karigarSummary.silverBalWithKarigar} g</div>
-            <div className="text-[10px] text-slate-500">
-              Issued: {karigarSummary.silverIssued}g • Returned: {karigarSummary.silverReturned}g • Diff: {karigarSummary.silverDiff}g
+          <div className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs space-y-1">
+            <div className="text-[11px] font-bold text-rose-800 flex items-center gap-1">
+              <Gem size={12} /> DIAMONDS & STONES
             </div>
-            <div className="text-[11px] font-semibold text-slate-800 pt-0.5">
-              Silver Making Total: ₹{karigarSummary.silverMakingTotal.toLocaleString('en-IN')}
-            </div>
+            <div className="text-sm font-bold text-slate-900">Open With Karigar: {karigarSummary.stoneOpenCt} ct</div>
+            <div className="text-[10px] text-slate-500">Tallied Stone Diff Total: <strong>{karigarSummary.stoneDiffTotalCt} ct</strong></div>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
-            <div className="text-[11px] text-slate-500">Total Making Earned (Gold + Silver)</div>
+            <div className="text-[11px] text-slate-500">Total Making Earned</div>
             <div className="text-base font-bold text-slate-900">₹{karigarSummary.totalMakingEarned.toLocaleString('en-IN')}</div>
             <div className="text-[11px] text-emerald-700 font-semibold">
               Paid: ₹{karigarSummary.totalMakingPaid.toLocaleString('en-IN')}
@@ -338,35 +483,35 @@ export default function KarigarLedgerModule({
             <div className={`text-base font-bold ${karigarSummary.pendingMakingDue > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
               ₹{karigarSummary.pendingMakingDue.toLocaleString('en-IN')}
             </div>
-            <div className="text-[10px] text-slate-500">Settle via Cash, UPI, or Advance below</div>
+            <div className="text-[10px] text-slate-500">Open Issues: {openIssuesForKarigar.length}</div>
           </div>
         </div>
       )}
 
       {activeKarigar && (
         <div className="grid lg:grid-cols-3 gap-4">
-          {/* Left Column: Issue/Return + Making Charge + Payment */}
           <div className="space-y-4">
-            <form onSubmit={handleRecordJobEntry} className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100">
-                Record Metal Issue / Return & Making
+            {/* STEP 1: GIVE METAL + DIAMONDS/STONES */}
+            <form onSubmit={handleIssueMetalAndStones} className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-1.5">
+                <Send size={14} className="text-amber-600" /> Step 1: Give Metal & Stones to Karigar
               </h3>
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block font-semibold text-slate-600 mb-1">Metal</label>
                   <select
-                    value={metalType}
+                    value={issueMetal}
                     onChange={(e) => {
                       const m = e.target.value;
-                      setMetalType(m);
+                      setIssueMetal(m);
                       if (m === 'Silver') {
-                        setPurityLabel('Silver');
-                        setTouchPct('99.9');
+                        setIssuePurity('Silver');
+                        setIssueTouch('99.9');
                         setMakingRateInput('80');
                       } else {
-                        setPurityLabel('22K');
-                        setTouchPct('91.6');
+                        setIssuePurity('22K');
+                        setIssueTouch('91.6');
                         setMakingRateInput('450');
                       }
                     }}
@@ -380,12 +525,12 @@ export default function KarigarLedgerModule({
                 <div>
                   <label className="block font-semibold text-slate-600 mb-1">Purity</label>
                   <select
-                    value={purityLabel}
+                    value={issuePurity}
                     onChange={(e) => {
                       const p = e.target.value;
-                      setPurityLabel(p);
+                      setIssuePurity(p);
                       if (DEFAULT_TOUCH_BY_PURITY[p] !== undefined) {
-                        setTouchPct(String(DEFAULT_TOUCH_BY_PURITY[p]));
+                        setIssueTouch(String(DEFAULT_TOUCH_BY_PURITY[p]));
                       }
                     }}
                     className="w-full px-2 py-1.5 border border-slate-200 rounded-lg font-semibold"
@@ -402,128 +547,238 @@ export default function KarigarLedgerModule({
                   <input
                     type="number"
                     step="0.1"
-                    value={touchPct}
-                    onChange={(e) => setTouchPct(e.target.value)}
+                    value={issueTouch}
+                    onChange={(e) => setIssueTouch(e.target.value)}
                     className="w-full px-2 py-1.5 border border-slate-200 rounded-lg font-bold"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-600 mb-1">Metal Given (g)</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    value={issueWt}
+                    onChange={(e) => setIssueWt(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-600 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={issueDate}
+                    onChange={(e) => setIssueDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              {/* Diamonds / Other Stones Given */}
+              <div className="p-3 rounded-xl bg-rose-50/50 border border-rose-200/80 space-y-2">
+                <div className="font-bold text-rose-950 flex items-center gap-1">
+                  <Gem size={13} /> Diamonds / Other Stones Given (Optional)
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Stone / Diamond Type</label>
+                    <input
+                      type="text"
+                      value={stoneType}
+                      onChange={(e) => setStoneType(e.target.value)}
+                      placeholder="Diamond, Ruby, Emerald..."
+                      className="w-full px-2.5 py-1 bg-white border border-rose-200 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Stone Given (ct)</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={stoneGivenCt}
+                      onChange={(e) => setStoneGivenCt(e.target.value)}
+                      placeholder="0.000"
+                      className="w-full px-2.5 py-1 bg-white border border-rose-200 rounded-lg font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <input
+                type="text"
+                value={issueNote}
+                onChange={(e) => setIssueNote(e.target.value)}
+                placeholder="Order / ornament note (e.g. Ring making)"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg"
+              />
+
+              <button type="submit" className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg">
+                Issue Metal & Stones to Karigar
+              </button>
+            </form>
+
+            {/* STEP 2: RECEIVE MADE PIECE + STONES TAKEN & DIFFERENCE TALLY */}
+            <form onSubmit={handleReceiveAndTally} className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-1.5">
+                <PackageCheck size={15} className="text-emerald-600" /> Step 2: Receive Made Piece, Stones & Tally
+              </h3>
+
+              <div>
+                <label className="block font-semibold text-slate-600 mb-1">Select Open Issue to Tally</label>
+                <select
+                  value={activeOpenIssue ? String(activeOpenIssue.id) : ''}
+                  onChange={(e) => setSelectedOpenIssueId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-semibold bg-slate-50"
+                >
+                  {openIssuesForKarigar.map((iss) => (
+                    <option key={iss.id} value={String(iss.id)}>
+                      {iss.date} • {iss.remainingWt}g {iss.metal}
+                      {(Number(iss.remainingStoneCt) || 0) > 0 ? ` + ${iss.remainingStoneCt}ct ${iss.stoneType}` : ''} ({iss.note})
+                    </option>
+                  ))}
+                  {openIssuesForKarigar.length === 0 && <option value="">No Open Issue (Direct Receive)</option>}
+                </select>
               </div>
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Issued Wt (g)</label>
+                  <label className="block font-semibold text-slate-600 mb-1">Made Wt (g)</label>
                   <input
                     type="number"
                     step="0.001"
-                    value={issuedWt}
-                    onChange={(e) => setIssuedWt(e.target.value)}
-                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Ornament Ret (g)</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    value={returnedOrnamentWt}
+                    value={recvOrnamentWt}
                     onChange={(e) => {
-                      setReturnedOrnamentWt(e.target.value);
-                      setMakingBasisWt(e.target.value);
+                      setRecvOrnamentWt(e.target.value);
+                      if (makingBasisWt === '') setMakingBasisWt(e.target.value);
                     }}
+                    placeholder="0.000"
                     className="w-full px-2 py-1.5 border border-slate-200 rounded-lg font-bold text-emerald-700"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-600 mb-1">Scrap Ret (g)</label>
+                  <label className="block font-semibold text-slate-600 mb-1">Scrap Wt (g)</label>
                   <input
                     type="number"
                     step="0.001"
-                    value={returnedScrapWt}
-                    onChange={(e) => setReturnedScrapWt(e.target.value)}
+                    value={recvScrapWt}
+                    onChange={(e) => setRecvScrapWt(e.target.value)}
+                    placeholder="0.000"
                     className="w-full px-2 py-1.5 border border-slate-200 rounded-lg"
                   />
                 </div>
+                <div>
+                  <label className="block font-semibold text-slate-600 mb-1">Actual Touch %</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={recvTouchPct}
+                    onChange={(e) => setRecvTouchPct(e.target.value)}
+                    placeholder={String(activeOpenIssue?.touchPct || 91.6)}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg font-bold"
+                  />
+                </div>
               </div>
 
-              {/* Making Charge Formula Bar */}
-              <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/80 space-y-2">
-                <div className="font-bold text-amber-950">{metalType} Making Charges</div>
-                <div className="grid grid-cols-3 gap-2">
+              {/* Diamonds / Stones Taken Back & Loss */}
+              <div className="p-3 rounded-xl bg-rose-50/50 border border-rose-200/80 space-y-2">
+                <div className="font-bold text-rose-950 flex items-center justify-between">
+                  <span className="flex items-center gap-1"><Gem size={13} /> {effectiveStoneType} Taken Back</span>
+                  <span className="text-[10px]">Open: {openRemainingStoneCt} ct</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Basis</label>
-                    <select
-                      value={makingCalcMode}
-                      onChange={(e) => setMakingCalcMode(e.target.value)}
-                      className="w-full px-2 py-1 bg-white border border-amber-300 rounded-lg font-semibold"
-                    >
-                      <option value="per_gram">₹ / Gram</option>
-                      <option value="percent">% of Metal</option>
-                      <option value="flat">Flat ₹</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
-                      {makingCalcMode === 'percent' ? 'Making %' : makingCalcMode === 'flat' ? 'Flat ₹' : 'Rate ₹/g'}
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={makingRateInput}
-                      onChange={(e) => setMakingRateInput(e.target.value)}
-                      className="w-full px-2 py-1 bg-white border border-amber-300 rounded-lg font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Piece Wt (g)</label>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Stone Taken (ct)</label>
                     <input
                       type="number"
                       step="0.001"
-                      value={makingBasisWt}
-                      onChange={(e) => setMakingBasisWt(e.target.value)}
-                      className="w-full px-2 py-1 bg-white border border-amber-300 rounded-lg font-semibold"
+                      value={stoneTakenCt}
+                      onChange={(e) => setStoneTakenCt(e.target.value)}
+                      placeholder="0.000"
+                      className="w-full px-2.5 py-1 bg-white border border-rose-200 rounded-lg font-bold text-emerald-700"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Stone Loss / Breakage (ct)</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={stoneLossCt}
+                      onChange={(e) => setStoneLossCt(e.target.value)}
+                      placeholder="0.000"
+                      className="w-full px-2.5 py-1 bg-white border border-rose-200 rounded-lg font-semibold text-red-700"
                     />
                   </div>
                 </div>
-                <div className="text-[11px] font-bold text-slate-900 pt-1 border-t border-amber-200/70 flex justify-between">
-                  <span>Fine Issued: {fineIssuedG}g • Fine Ret: {fineReturnedG}g</span>
-                  <span className="text-emerald-800">Making: ₹{calculatedMakingRs.toLocaleString('en-IN')}</span>
+              </div>
+
+              {/* Making Charge Box */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="font-bold text-slate-800">{effectiveMetal} Making Charges</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    value={makingCalcMode}
+                    onChange={(e) => setMakingCalcMode(e.target.value)}
+                    className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-semibold"
+                  >
+                    <option value="per_gram">₹ / Gram</option>
+                    <option value="percent">% Metal</option>
+                    <option value="flat">Flat ₹</option>
+                  </select>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={makingRateInput}
+                    onChange={(e) => setMakingRateInput(e.target.value)}
+                    placeholder="Rate / % / ₹"
+                    className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold"
+                  />
+                  <input
+                    type="number"
+                    step="0.001"
+                    value={makingBasisWt}
+                    onChange={(e) => setMakingBasisWt(e.target.value)}
+                    placeholder="Basis g"
+                    className="px-2 py-1 bg-white border border-slate-200 rounded-lg"
+                  />
+                </div>
+
+                <div className="text-[11px] pt-1.5 border-t border-slate-200 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Metal Diff: <strong>{diffAgainstIssueG}g</strong></span>
+                    <span>Stone Diff: <strong>{stoneDiffCt}ct</strong></span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>Fine Diff: {fineDiffG}g</span>
+                    <span className="text-emerald-700">Making: ₹{calculatedMakingRs.toLocaleString('en-IN')}</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-slate-600 px-1">
-                <span>Unreturned Balance: <strong>{balanceWithKarigarG} g</strong></span>
-                <label className="inline-flex items-center gap-1.5 font-semibold cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={markJobSettled}
-                    onChange={(e) => setMarkJobSettled(e.target.checked)}
-                  />
-                  Close Job & Lock Diff ({balanceWithKarigarG}g)
-                </label>
-              </div>
+              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={closeOpenIssue}
+                  onChange={(e) => setCloseOpenIssue(e.target.checked)}
+                />
+                Close selected open issue & lock metal/stone differences
+              </label>
 
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={entryDate}
-                  onChange={(e) => setEntryDate(e.target.value)}
-                  className="px-2.5 py-1.5 border border-slate-200 rounded-lg"
-                />
-                <input
-                  type="text"
-                  value={jobNote}
-                  onChange={(e) => setJobNote(e.target.value)}
-                  placeholder="Order / Ring / Slip note"
-                  className="px-2.5 py-1.5 border border-slate-200 rounded-lg"
-                />
-              </div>
+              <input
+                type="text"
+                value={recvRemarks}
+                onChange={(e) => setRecvRemarks(e.target.value)}
+                placeholder="Receive / tally notes"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg"
+              />
 
               <button type="submit" className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg">
-                Save Job & Making Entry
+                Save Receive & Difference Tally
               </button>
             </form>
 
-            {/* Record Making Payment to Karigar */}
+            {/* Making Charge Payout Form */}
             <form onSubmit={handleRecordPayment} className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                 <Wallet size={15} className="text-emerald-600" /> Pay Making Charges to Karigar
@@ -548,7 +803,7 @@ export default function KarigarLedgerModule({
                 type="text"
                 value={payNote}
                 onChange={(e) => setPayNote(e.target.value)}
-                placeholder="Payment remarks"
+                placeholder="Payment note"
                 className="w-full px-3 py-1.5 border border-slate-200 rounded-lg"
               />
               {payMode === 'Cash' && (
@@ -563,50 +818,63 @@ export default function KarigarLedgerModule({
             </form>
           </div>
 
-          {/* Right 2 Columns: Karigar Passbook Table */}
+          {/* Right 2 Columns: Karigar Passbook */}
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">{activeKarigar.name} — Metal & Making Passbook</h3>
-                <p className="text-[11px] text-slate-500">Tracks issued metal, returned weight, purity/touch, difference & making charges</p>
+                <h3 className="text-sm font-bold text-slate-900">{activeKarigar.name} — Metal, Stone & Making Log</h3>
+                <p className="text-[11px] text-slate-500">Tracks metal (g), diamonds/stones (ct), purity/touch, differences & making charges</p>
               </div>
               <span className="text-[11px] text-slate-500">{entriesForKarigar.length} entries</span>
             </div>
 
-            <div className="overflow-x-auto max-h-[540px]">
+            <div className="overflow-x-auto max-h-[620px]">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
                   <tr>
                     <th className="p-3">Date & Particulars</th>
                     <th className="p-3">Metal & Touch</th>
-                    <th className="p-3">Issued / Ret</th>
-                    <th className="p-3">Diff</th>
+                    <th className="p-3">Metal Given/Recvd</th>
+                    <th className="p-3">Stones (ct)</th>
                     <th className="p-3 text-right">Making / Paid</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {entriesForKarigar.map((row) => {
                     const isPayout = row.entryKind === 'payout';
+                    const isIssue = row.entryKind === 'issue';
                     return (
                       <tr key={row.id}>
                         <td className="p-3">
                           <div className="font-semibold text-slate-900">{row.note}</div>
-                          <div className="text-[10px] text-slate-500">{row.date} • {isPayout ? row.payMode : 'Job Entry'}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {row.date} • {isIssue ? (row.remainingWt > 0 || row.remainingStoneCt > 0 ? 'Open Issue' : 'Tallied') : isPayout ? row.payMode : 'Receive Tally'}
+                          </div>
                         </td>
                         <td className="p-3 font-semibold">
-                          {row.metal} ({row.purity} • {row.touchPct}%)
+                          {row.metal} {row.touchPct ? `(${row.purity} • ${row.touchPct}%)` : ''}
                         </td>
                         <td className="p-3">
-                          {isPayout ? '-' : `${row.issuedWt}g / ${row.totalReturnedWt}g`}
+                          {isIssue
+                            ? `${row.issuedWt}g (Open: ${row.remainingWt}g)`
+                            : row.entryKind === 'receive'
+                            ? `${row.totalReturnedWt}g (Diff: ${row.diffMetalWt}g)`
+                            : '-'}
                         </td>
-                        <td className="p-3 font-semibold text-amber-900">
-                          {!isPayout && row.diffMetalWt !== 0 ? `${row.diffMetalWt}g` : '-'}
+                        <td className="p-3 font-semibold text-rose-900">
+                          {isIssue && (Number(row.stoneGivenCt) || 0) > 0
+                            ? `Given: ${row.stoneGivenCt}ct (Open: ${row.remainingStoneCt}ct)`
+                            : row.entryKind === 'receive' && ((Number(row.stoneTakenCt) || 0) > 0 || (Number(row.stoneLossCt) || 0) > 0)
+                            ? `Taken: ${row.stoneTakenCt}ct • Diff: ${row.stoneDiffCt}ct`
+                            : '-'}
                         </td>
                         <td className={`p-3 text-right font-bold ${isPayout ? 'text-emerald-700' : 'text-slate-900'}`}>
-                          <span className="inline-flex items-center gap-0.5">
-                            {isPayout ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
-                            ₹{Math.abs(Number(row.makingChargeRs || 0)).toLocaleString('en-IN')}
-                          </span>
+                          {Number(row.makingChargeRs || 0) !== 0 ? (
+                            <span className="inline-flex items-center gap-0.5">
+                              {isPayout ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
+                              ₹{Math.abs(Number(row.makingChargeRs)).toLocaleString('en-IN')}
+                            </span>
+                          ) : '-'}
                         </td>
                       </tr>
                     );
@@ -615,7 +883,7 @@ export default function KarigarLedgerModule({
                   {entriesForKarigar.length === 0 && (
                     <tr>
                       <td colSpan="5" className="p-8 text-center text-slate-400">
-                        No metal or making entries recorded for {activeKarigar.name} yet.
+                        No metal, stone, or making entries for {activeKarigar.name} yet.
                       </td>
                     </tr>
                   )}
