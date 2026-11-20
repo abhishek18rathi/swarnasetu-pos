@@ -15,6 +15,7 @@ import AccountsRojmelModule from './modules/AccountsRojmelModule';
 import BarcodeTagsModule from './modules/BarcodeTagsModule';
 import KittyModule from './modules/KittyModule';
 import CustomOrdersModule from './modules/CustomOrdersModule';
+import TallyExcelModule from './modules/TallyExcelModule';
 
 const DEFAULT_ADMIN = {
   id: 'sonu', pass: '@4266@', name: 'Sonu (Master Admin)', role: 'Admin',
@@ -36,7 +37,7 @@ const MODULES = [
   { id: 'accounts', title: 'Accounts & Rojmel', desc: 'Daily Cash Drawer & Expenses', icon: Wallet, color: 'text-purple-600 bg-purple-50', ready: true },
   { id: 'barcode', title: 'Barcode & Tags', desc: 'Batch Thermal Tag Printing', icon: Printer, color: 'text-slate-700 bg-slate-100', ready: true },
   { id: 'kitty', title: 'Kitty Schemes', desc: 'Admin Rules & Monthly Installments', icon: Gift, color: 'text-pink-600 bg-pink-50', ready: true },
-  { id: 'exports', title: 'Tally & Excel', desc: 'CA Reports & Tally XML Export', icon: FileSpreadsheet, color: 'text-green-700 bg-green-50', ready: false },
+  { id: 'exports', title: 'Tally & Excel', desc: 'Bulk Import, CSV & Tally XML', icon: FileSpreadsheet, color: 'text-green-700 bg-green-50', ready: true },
   { id: 'orders', title: 'Custom Orders', desc: 'Order Book & WhatsApp Alerts', icon: ClipboardList, color: 'text-orange-600 bg-orange-50', ready: true },
   { id: 'purchase', title: 'B2B & HUID Stock', desc: 'Wholesaler Bills & HUID Tracking', icon: Truck, color: 'text-cyan-600 bg-cyan-50', ready: false },
   { id: 'urd', title: 'Old Gold (URD)', desc: 'Cash Payouts & PAN Compliance', icon: Coins, color: 'text-yellow-700 bg-yellow-50', ready: false }
@@ -388,7 +389,20 @@ export default function App() {
           />
         )}
 
-        {!['dashboard', 'payroll', 'inventory', 'billing', 'karigar', 'crm', 'accounts', 'barcode', 'kitty', 'orders', 'rates'].includes(activeModule) && (
+        {activeModule === 'exports' && (
+          <TallyExcelModule
+            currentUser={currentUser}
+            inventoryItems={inventoryItems}
+            setInventoryItems={(v) => { setInventoryItems(v); syncToCloud({ inventoryItems: v }); }}
+            invoices={invoices}
+            customerLedger={customerLedger}
+            setCustomerLedger={(v) => { setCustomerLedger(v); syncToCloud({ customerLedger: v }); }}
+            rojmelEntries={rojmelEntries}
+            customOrders={customOrders}
+          />
+        )}
+
+        {!['dashboard', 'payroll', 'inventory', 'billing', 'karigar', 'crm', 'accounts', 'barcode', 'kitty', 'orders', 'exports', 'rates'].includes(activeModule) && (
           <div className="bg-white rounded-2xl border border-slate-200/80 p-10 text-center max-w-md mx-auto">
             <h3 className="text-sm font-bold text-slate-900 capitalize">{activeModule} Module</h3>
             <p className="text-xs text-slate-500 mt-1">Module slot ready. Say "Build {activeModule}" when you want to activate this file.</p>
