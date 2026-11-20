@@ -4,12 +4,13 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import {
   Shield, Users, Package, ShoppingCart, Hammer, BookOpen,
   Wallet, Printer, Gift, FileSpreadsheet, ClipboardList,
-  Truck, Coins, TrendingUp, LogOut, ArrowLeft, Cloud
+  Truck, Coins, TrendingUp, LogOut, ArrowLeft, Cloud, Scale
 } from 'lucide-react';
 import PayrollModule from './modules/PayrollModule';
 import InventoryModule from './modules/InventoryModule';
 import SalesBillingModule from './modules/SalesBillingModule';
 import KarigarMelterModule from './modules/KarigarMelterModule';
+import KarigarLedgerModule from './modules/KarigarLedgerModule';
 import CrmUdhaariModule from './modules/CrmUdhaariModule';
 import AccountsRojmelModule from './modules/AccountsRojmelModule';
 import BarcodeTagsModule from './modules/BarcodeTagsModule';
@@ -35,6 +36,7 @@ const MODULES = [
   { id: 'inventory', title: 'Inventory & Vault', desc: 'AI Stock, Amendments & Audit', icon: Package, color: 'text-teal-600 bg-teal-50', ready: true },
   { id: 'billing', title: 'Sales & Billing', desc: 'Estimates, Discounts & GST Bill', icon: ShoppingCart, color: 'text-blue-600 bg-blue-50', ready: true },
   { id: 'karigar', title: 'Karigar & Melter', desc: 'Melting, Repairs & Amendments', icon: Hammer, color: 'text-amber-600 bg-amber-50', ready: true },
+  { id: 'karigar_khata', title: 'Karigar Metal & Making', desc: 'Gold/Silver Balance, Purity & Majoori', icon: Scale, color: 'text-rose-600 bg-rose-50', ready: true },
   { id: 'crm', title: 'CRM & Udhaari', desc: 'Customer Khata & Advances', icon: BookOpen, color: 'text-emerald-600 bg-emerald-50', ready: true },
   { id: 'accounts', title: 'Accounts & Rojmel', desc: 'Daily Cash Drawer & Expenses', icon: Wallet, color: 'text-purple-600 bg-purple-50', ready: true },
   { id: 'barcode', title: 'Barcode & Tags', desc: 'Batch Thermal Tag Printing', icon: Printer, color: 'text-slate-700 bg-slate-100', ready: true },
@@ -68,6 +70,7 @@ export default function App() {
   const [melterJobs, setMelterJobs] = useState([]);
   const [karigarList, setKarigarList] = useState([]);
   const [karigarLedger, setKarigarLedger] = useState([]);
+  const [karigarMetalEntries, setKarigarMetalEntries] = useState([]);
   const [repairJobs, setRepairJobs] = useState([]);
 
   const [customerLedger, setCustomerLedger] = useState([]);
@@ -104,6 +107,7 @@ export default function App() {
         if (d.melterJobs) setMelterJobs(d.melterJobs);
         if (d.karigarList) setKarigarList(d.karigarList);
         if (d.karigarLedger) setKarigarLedger(d.karigarLedger);
+        if (d.karigarMetalEntries) setKarigarMetalEntries(d.karigarMetalEntries);
         if (d.repairJobs) setRepairJobs(d.repairJobs);
         if (d.customerLedger) setCustomerLedger(d.customerLedger);
         if (d.rojmelEntries) setRojmelEntries(d.rojmelEntries);
@@ -346,6 +350,19 @@ export default function App() {
             setKarigarLedger={(v) => { setKarigarLedger(v); syncToCloud({ karigarLedger: v }); }}
             repairJobs={repairJobs}
             setRepairJobs={(v) => { setRepairJobs(v); syncToCloud({ repairJobs: v }); }}
+          />
+        )}
+
+        {activeModule === 'karigar_khata' && (
+          <KarigarLedgerModule
+            currentUser={currentUser}
+            liveRates={liveRates}
+            karigarList={karigarList}
+            setKarigarList={(v) => { setKarigarList(v); syncToCloud({ karigarList: v }); }}
+            karigarMetalEntries={karigarMetalEntries}
+            setKarigarMetalEntries={(v) => { setKarigarMetalEntries(v); syncToCloud({ karigarMetalEntries: v }); }}
+            rojmelEntries={rojmelEntries}
+            setRojmelEntries={(v) => { setRojmelEntries(v); syncToCloud({ rojmelEntries: v }); }}
           />
         )}
 
