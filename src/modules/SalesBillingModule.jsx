@@ -5,14 +5,10 @@ import {
 } from 'lucide-react';
 
 export default function SalesBillingModule({
-  currentUser,
-  liveRates,
-  inventoryItems = [],
-  setInventoryItems,
-  estimates = [],
-  setEstimates,
-  invoices = []
-  , setInvoices
+  currentUser, liveRates,
+  inventoryItems = [], setInventoryItems,
+  estimates = [], setEstimates,
+  invoices = [], setInvoices
 }) {
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.privileges?.payroll_admin;
   const canEstimate = isAdmin || !!currentUser?.privileges?.sales_estimate;
@@ -22,120 +18,56 @@ export default function SalesBillingModule({
   const [tab, setTab] = useState('estimate');
   const [banner, setBanner] = useState('');
 
-  // Step 1: Salesman Estimate Builder States
   const [codeSearch, setCodeSearch] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [cartItems, setCartItems] = useState([]);
 
-  // Step 2: Manager Discount Reverse-Calculator States
   const [activeDiscountEstId, setActiveDiscountEstId] = useState(null);
   const [targetFinalInput, setTargetFinalInput] = useState('');
 
-  // Step 3: Billing Counter & Printable 2-Copy Invoice Modal
   const [paymentMode, setPaymentMode] = useState('UPI / Bank');
   const [viewingInvoice, setViewingInvoice] = useState(null);
-
-  // Step 4: Sold Folder Confirm Delete
   const [confirmClearId, setConfirmClearId] = useState(null);
 
-  const showBanner = (msg) => {
-    setBanner(msg);
-    setTimeout(() => setBanner(''), 4500);
-  };
+  const showBanner = (msg) => { setBanner(msg); setTimeout(() => setBanner(''), 4000); };
 
   const liveStock = inventoryItems.filter(i => i.status === 'live');
   const inAmendmentStock = inventoryItems.filter(i => i.status === 'alteration');
   const soldStock = inventoryItems.filter(i => i.status === 'sold');
 
-  const getDefaultRateForItem = (item) => {
-    if (item.material === 'Silver') return Number(liveRates.silver) || 0;
-    if (item.material === 'Gold-Diamond') return Number(liveRates.gold18) || 0;
-    return Number(liveRates.gold22) || 0;
-  };
+  const getRate = (item) => item.material === 'Silver' ? Number(liveRates.silver) || 0 : item.material === 'Gold-Diamond' ? Number(liveRates.gold18) || 0 : Number(liveRates.gold22) || 0;
+  const getPurity = (item) => item.material === 'Silver' ? 'Silver' : item.material === 'Gold-Diamond' ? '18K' : '22K';
 
-  const getDefaultPurityLabel = (item) => {
-    if (item.material === 'Silver') return 'Silver';
-    if (item.material === 'Gold-Diamond') return '18K';
-    return '22K';
-  };
+  const handleAddItem = (item) => {
+    if (cartItems.some(c => c.id === item.id)) return showBanner(`"${item.code}" already added.`);
+    if (item.reservedFor && !customerName.trim()) setCustomerName(item.reservedFor);
+    if (item.reservedMobile && !customerMobile.trim()) setCustomerMobile(item.reservedMobile);
 
-  // Add item to Salesman Estimate Cart (Auto-fills Reserved Customer & Amendment Note)
-  const handleAddItemToEstimate = (item) => {
-    if (cartItems.some(c => c.id === item.id)) {
-      showBanner(`"${item.code}" is already in this estimate.`);
-      return;
-    }
-
-    if (item.reservedFor && !customerName.trim()) {
-      setCustomerName(item.reservedFor);
-    }
-    if (item.reservedMobile && !customerMobile.trim()) {
-      setCustomerMobile(item.reservedMobile);
-    }
-
-    const rate = getDefaultRateForItem(item);
-    const purity = getDefaultPurityLabel(item);
+    const rate = getRate(item);
     const wt = Number(item.netWeight) || Number(item.grossWeight) || 0;
     const metalVal = wt * rate;
-    const origMaking = item.makingMode === 'percent'
-      ? metalVal * ((Number(item.makingValue) || 0) / 100)
-      : wt * (Number(item.makingValue) || 0);
+    const making = item.makingMode === 'percent' ? metalVal * ((Number(item.makingValue) || 0) / 100) : wt * (Number(item.makingValue) || 0);
 
-    const line = {
-      id: item.id,
-      code: item.code,
-      material: item.material,
-      type: item.type,
-      imageUrl: item.imageUrl,
-      grossWeight: Number(item.grossWeight) || wt,
-      netWeight: wt,
-      diamondCarat: Number(item.diamondCarat) || 0,
-      purity,
-      lockedRate: rate,
-      metalValue: Math.round(metalVal * 100) / 100,
-      makingMode: item.makingMode,
-      makingValue: Number(item.makingValue) || 0,
-      originalMaking: Math.round(origMaking * 100) / 100,
-      finalMaking: Math.round(origMaking * 100) / 100,
-      alterationNote: item.alterationNote || '',
-      reservedFor: item.reservedFor || ''
-    };
-
-    setCartItems([...cartItems, line]);
+    setCartItems([...cartItems, {
+      id: item.id, code: item.code, material: item.material, type: item.type, imageUrl: item.imageUrl,
+      grossWeight: Number(item.grossWeight) || wt, netWeight: wt, purity: getPurity(item),
+      lockedRate: rate, metalValue: Math.round(metalVal * 100) / 100,
+      makingMode: item.makingMode, makingValue: Number(item.makingValue) || 0,
+      originalMaking: Math.round(making * 100) / 100, finalMaking: Math.round(making * 100) / 100,
+      alterationNote: item.alterationNote || ''
+    }]);
     setCodeSearch('');
   };
 
-  const handleChangeLinePurity = (lineId, newPurity) => {
-    const rateMap = {
-      '24K': Number(liveRates.gold24) || 0,
-      '22K': Number(liveRates.gold22) || 0,
-      '18K': Number(liveRates.gold18) || 0,
-      'Silver': Number(liveRates.silver) || 0
-    };
-    const newRate = rateMap[newPurity] || 0;
-
-    setCartItems(cartItems.map(line => {
-      if (line.id !== lineId) return line;
-      const metalVal = line.netWeight * newRate;
-      const origMaking = line.makingMode === 'percent'
-        ? metalVal * (line.makingValue / 100)
-        : line.netWeight * line.makingValue;
-      return {
-        ...line,
-        purity: newPurity,
-        lockedRate: newRate,
-        metalValue: Math.round(metalVal * 100) / 100,
-        originalMaking: Math.round(origMaking * 100) / 100,
-        finalMaking: Math.round(origMaking * 100) / 100
-      };
+  const handleChangePurity = (id, purity) => {
+    const rate = purity === '24K' ? Number(liveRates.gold24) : purity === '18K' ? Number(liveRates.gold18) : purity === 'Silver' ? Number(liveRates.silver) : Number(liveRates.gold22);
+    setCartItems(cartItems.map(l => {
+      if (l.id !== id) return l;
+      const mVal = l.netWeight * rate;
+      const mk = l.makingMode === 'percent' ? mVal * (l.makingValue / 100) : l.netWeight * l.makingValue;
+      return { ...l, purity, lockedRate: rate, metalValue: Math.round(mVal * 100) / 100, originalMaking: Math.round(mk * 100) / 100, finalMaking: Math.round(mk * 100) / 100 };
     }));
-  };
-
-  const handleUpdateLineNote = (lineId, noteVal) => {
-    setCartItems(cartItems.map(line =>
-      line.id === lineId ? { ...line, alterationNote: noteVal } : line
-    ));
   };
 
   const calcTotals = (items) => {
@@ -145,412 +77,336 @@ export default function SalesBillingModule({
     const subTotal = metalTotal + finalMakingTotal;
     const gstAmount = Math.round(subTotal * 0.03 * 100) / 100;
     const grandTotal = Math.round((subTotal + gstAmount) * 100) / 100;
-    const discountGiven = Math.max(0, Math.round((origMakingTotal - finalMakingTotal) * 100) / 100);
     return {
       metalTotal: Math.round(metalTotal * 100) / 100,
       origMakingTotal: Math.round(origMakingTotal * 100) / 100,
       finalMakingTotal: Math.round(finalMakingTotal * 100) / 100,
       subTotal: Math.round(subTotal * 100) / 100,
-      gstAmount,
-      grandTotal,
-      discountGiven
+      gstAmount, grandTotal,
+      discountGiven: Math.max(0, Math.round((origMakingTotal - finalMakingTotal) * 100) / 100)
     };
   };
 
-  const handleCreateEstimate = (targetStatus) => {
-    if (cartItems.length === 0) {
-      showBanner('Please add at least 1 jewelry item to the estimate.');
-      return;
-    }
-    const totals = calcTotals(cartItems);
-    const estNo = `EST-${String(estimates.length + 101)}`;
-
-    const newEstimate = {
-      id: Date.now(),
-      estNo,
-      date: new Date().toISOString().slice(0, 10),
+  const handleCreateEstimate = (status) => {
+    if (!cartItems.length) return showBanner('Add at least 1 jewelry item.');
+    const estNo = `EST-${estimates.length + 101}`;
+    setEstimates([{
+      id: Date.now(), estNo, date: new Date().toISOString().slice(0, 10),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      salesmanId: currentUser.id,
-      salesmanName: currentUser.name,
-      customerName: customerName.trim() || 'Walk-in Customer',
-      customerMobile: customerMobile.trim(),
-      items: cartItems,
-      ...totals,
-      status: targetStatus,
-      approvedBy: targetStatus === 'ready_for_billing' ? 'No Discount (Direct)' : ''
-    };
-
-    setEstimates([newEstimate, ...estimates]);
-    setCartItems([]);
-    setCustomerName('');
-    setCustomerMobile('');
-
-    if (targetStatus === 'pending_discount') {
-      showBanner(`Estimate ${estNo} sent to Manager for Discount Approval!`);
-      if (canDiscount) setTab('manager');
-    } else {
-      showBanner(`Estimate ${estNo} pushed directly to Billing Counter!`);
-      if (canPrintBill) setTab('billing');
-    }
+      salesmanName: currentUser.name, customerName: customerName.trim() || 'Walk-in Customer',
+      customerMobile: customerMobile.trim(), items: cartItems, ...calcTotals(cartItems),
+      status, approvedBy: status === 'ready_for_billing' ? 'Direct (No Discount)' : ''
+    }, ...estimates]);
+    setCartItems([]); setCustomerName(''); setCustomerMobile('');
+    showBanner(status === 'pending_discount' ? `Estimate ${estNo} sent to Manager!` : `Estimate ${estNo} sent to Billing!`);
+    if (status === 'pending_discount' && canDiscount) setTab('manager');
+    if (status === 'ready_for_billing' && canPrintBill) setTab('billing');
   };
 
-  const applySmartReverseDiscount = (est) => {
-    const desiredFinal = parseFloat(targetFinalInput);
-    if (isNaN(desiredFinal) || desiredFinal <= 0) {
-      showBanner('Enter a valid Target Final Amount.');
-      return;
-    }
-
+  const applyReverseDiscount = (est) => {
+    const target = parseFloat(targetFinalInput);
+    if (isNaN(target) || target <= 0) return showBanner('Enter valid Final Amount.');
     const metalTotal = est.items.reduce((s, i) => s + Number(i.metalValue || 0), 0);
-    const requiredPreGst = desiredFinal / 1.03;
-    const requiredMakingTotal = requiredPreGst - metalTotal;
+    const reqPreGst = target / 1.03;
+    const reqMaking = reqPreGst - metalTotal;
+    if (reqMaking < 0) return showBanner(`Minimum allowed (Metal + 3% GST): ₹${Math.ceil(metalTotal * 1.03)}`);
 
-    if (requiredMakingTotal < 0) {
-      showBanner(`Cannot go below locked Metal Value + 3% GST (Min: ₹${Math.ceil(metalTotal * 1.03).toLocaleString('en-IN')}).`);
-      return;
-    }
-
-    const totalOrigMaking = est.items.reduce((s, i) => s + Number(i.originalMaking || 0), 0);
-    const totalWt = est.items.reduce((s, i) => s + Number(i.netWeight || 0), 0);
-
-    let allocatedMaking = 0;
-    const updatedItems = est.items.map((item, idx) => {
-      if (idx === est.items.length - 1) {
-        const rem = Math.max(0, Math.round((requiredMakingTotal - allocatedMaking) * 100) / 100);
-        return { ...item, finalMaking: rem };
-      }
-      const share = totalOrigMaking > 0
-        ? (item.originalMaking / totalOrigMaking)
-        : (totalWt > 0 ? (item.netWeight / totalWt) : (1 / est.items.length));
-      const itemMaking = Math.round(requiredMakingTotal * share * 100) / 100;
-      allocatedMaking += itemMaking;
-      return { ...item, finalMaking: itemMaking };
+    const origMkSum = est.items.reduce((s, i) => s + Number(i.originalMaking || 0), 0);
+    let allocated = 0;
+    const updatedItems = est.items.map((it, idx) => {
+      if (idx === est.items.length - 1) return { ...it, finalMaking: Math.max(0, Math.round((reqMaking - allocated) * 100) / 100) };
+      const share = origMkSum > 0 ? it.originalMaking / origMkSum : 1 / est.items.length;
+      const mk = Math.round(reqMaking * share * 100) / 100;
+      allocated += mk;
+      return { ...it, finalMaking: mk };
     });
 
-    const newTotals = calcTotals(updatedItems);
-    const exactPreGst = Math.round((desiredFinal / 1.03) * 100) / 100;
-    const exactGst = Math.round((desiredFinal - exactPreGst) * 100) / 100;
-
-    setEstimates(estimates.map(e =>
-      e.id === est.id
-        ? {
-            ...e,
-            items: updatedItems,
-            ...newTotals,
-            subTotal: exactPreGst,
-            gstAmount: exactGst,
-            grandTotal: desiredFinal,
-            status: 'ready_for_billing',
-            approvedBy: currentUser.name
-          }
-        : e
-    ));
-
-    setActiveDiscountEstId(null);
-    setTargetFinalInput('');
-    showBanner(`Discount approved for ${est.estNo}! Final Bill locked at ₹${desiredFinal.toLocaleString('en-IN')} and sent to Billing Counter.`);
+    const exactPre = Math.round((target / 1.03) * 100) / 100;
+    const exactGst = Math.round((target - exactPre) * 100) / 100;
+    setEstimates(estimates.map(e => e.id === est.id ? {
+      ...e, items: updatedItems, ...calcTotals(updatedItems),
+      subTotal: exactPre, gstAmount: exactGst, grandTotal: target,
+      status: 'ready_for_billing', approvedBy: currentUser.name
+    } : e));
+    setActiveDiscountEstId(null); setTargetFinalInput('');
+    showBanner(`${est.estNo} approved at ₹${target.toLocaleString('en-IN')} & sent to Billing!`);
   };
 
-  const handleGenerateFinalBill = (est) => {
+  const handleGenerateBill = (est) => {
     if (!canPrintBill) return;
-    const invNo = `INV-${new Date().getFullYear()}-${String(invoices.length + 1001)}`;
-    const todayStr = new Date().toISOString().slice(0, 10);
-
-    const newInvoice = {
-      id: Date.now(),
-      invoiceNo: invNo,
-      estNo: est.estNo,
-      date: todayStr,
+    const invNo = `INV-${new Date().getFullYear()}-${invoices.length + 1001}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const inv = {
+      id: Date.now(), invoiceNo: invNo, estNo: est.estNo, date: today,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      customerName: est.customerName,
-      customerMobile: est.customerMobile,
-      salesmanName: est.salesmanName,
-      approvedBy: est.approvedBy,
-      cashierName: currentUser.name,
-      paymentMode,
-      items: est.items,
-      metalTotal: est.metalTotal,
-      finalMakingTotal: est.finalMakingTotal,
-      discountGiven: est.discountGiven,
-      subTotal: est.subTotal,
-      gstAmount: est.gstAmount,
-      grandTotal: est.grandTotal
+      customerName: est.customerName, customerMobile: est.customerMobile,
+      paymentMode, items: est.items, subTotal: est.subTotal, gstAmount: est.gstAmount, grandTotal: est.grandTotal
     };
-
-    setInvoices([newInvoice, ...invoices]);
-    setEstimates(estimates.map(e => (e.id === est.id ? { ...e, status: 'billed', invoiceNo: invNo } : e)));
-
-    const soldIds = new Set(est.items.map(i => i.id));
-    setInventoryItems(inventoryItems.map(invItem =>
-      soldIds.has(invItem.id)
-        ? {
-            ...invItem,
-            status: 'sold',
-            reservedFor: '',
-            soldDate: todayStr,
-            invoiceNo: invNo,
-            soldToCustomer: est.customerName
-          }
-        : invItem
-    ));
-
-    setViewingInvoice(newInvoice);
-    showBanner(`GST Invoice ${invNo} generated! Items moved to Sold Folder.`);
+    setInvoices([inv, ...invoices]);
+    setEstimates(estimates.map(e => e.id === est.id ? { ...e, status: 'billed', invoiceNo: invNo } : e));
+    const soldSet = new Set(est.items.map(i => i.id));
+    setInventoryItems(inventoryItems.map(i => soldSet.has(i.id) ? { ...i, status: 'sold', reservedFor: '', soldDate: today, invoiceNo: invNo } : i));
+    setViewingInvoice(inv);
+    showBanner(`Invoice ${invNo} generated!`);
   };
 
-  const handleSendWhatsApp = (inv) => {
-    const itemLines = inv.items
-      .map((it, idx) => `${idx + 1}. ${it.code} (${it.type} - ${it.netWeight}g)${it.alterationNote ? ` [${it.alterationNote}]` : ''} : ₹${(it.metalValue + it.finalMaking).toLocaleString('en-IN')}`)
-      .join('%0A');
-    const text =
-      `*SWARNASETU JEWELLERS - TAX INVOICE*%0A` +
-      `Invoice No: *${inv.invoiceNo}*%0A` +
-      `Date: ${inv.date}%0A` +
-      `Customer: ${inv.customerName}%0A` +
-      `----------------------------%0A` +
-      `${itemLines}%0A` +
-      `----------------------------%0A` +
-      `Taxable Value: ₹${inv.subTotal.toLocaleString('en-IN')}%0A` +
-      `GST (3%): ₹${inv.gstAmount.toLocaleString('en-IN')}%0A` +
-      `*Grand Total: ₹${inv.grandTotal.toLocaleString('en-IN')}*%0A` +
-      `Payment: ${inv.paymentMode}%0A` +
-      `Thank you for shopping with us!`;
-
-    const phone = (inv.customerMobile || '').replace(/\D/g, '');
-    const waUrl = phone.length >= 10
-      ? `https://wa.me/91${phone.slice(-10)}?text=${text}`
-      : `https://wa.me/?text=${text}`;
-    window.open(waUrl, '_blank');
+  const sendWhatsApp = (inv) => {
+    const lines = inv.items.map((it, idx) => `${idx + 1}. ${it.code} (${it.type} ${it.netWeight}g): ₹${(it.metalValue + it.finalMaking).toLocaleString('en-IN')}`).join('%0A');
+    const msg = `*SWARNASETU JEWELLERS - TAX INVOICE*%0AInv: *${inv.invoiceNo}* | Date: ${inv.date}%0ACustomer: ${inv.customerName}%0A----------------%0A${lines}%0A----------------%0ASubtotal: ₹${inv.subTotal}%0AGST (3%): ₹${inv.gstAmount}%0A*Grand Total: ₹${inv.grandTotal}*%0APayment: ${inv.paymentMode}`;
+    const ph = (inv.customerMobile || '').replace(/\D/g, '');
+    window.open(ph.length >= 10 ? `https://wa.me/91${ph.slice(-10)}?text=${msg}` : `https://wa.me/?text=${msg}`, '_blank');
   };
 
-  const handleClearSoldPhoto = (itemId) => {
-    if (!isAdmin) return;
-    setInventoryItems(inventoryItems.map(item =>
-      item.id === itemId ? { ...item, imageUrl: '', photoClearedByAdmin: true } : item
-    ));
-    setConfirmClearId(null);
-    showBanner('Sold item photo deleted from cloud storage.');
-  };
-
-  const matchingLiveStock = codeSearch.trim()
-    ? liveStock.filter(i =>
-        i.code.toLowerCase().includes(codeSearch.toLowerCase()) ||
-        i.type.toLowerCase().includes(codeSearch.toLowerCase()) ||
-        (i.reservedFor && i.reservedFor.toLowerCase().includes(codeSearch.toLowerCase()))
-      )
+  const matches = codeSearch.trim()
+    ? liveStock.filter(i => i.code.toLowerCase().includes(codeSearch.toLowerCase()) || i.type.toLowerCase().includes(codeSearch.toLowerCase()) || (i.reservedFor && i.reservedFor.toLowerCase().includes(codeSearch.toLowerCase())))
     : liveStock.slice(0, 8);
 
-  const lockedWorkshopMatches = codeSearch.trim()
-    ? inAmendmentStock.filter(i =>
-        i.code.toLowerCase().includes(codeSearch.toLowerCase()) ||
-        (i.alteration?.customerName && i.alteration.customerName.toLowerCase().includes(codeSearch.toLowerCase()))
-      )
+  const lockedMatches = codeSearch.trim()
+    ? inAmendmentStock.filter(i => i.code.toLowerCase().includes(codeSearch.toLowerCase()) || (i.alteration?.customerName && i.alteration.customerName.toLowerCase().includes(codeSearch.toLowerCase())))
     : [];
 
-  const currentTotals = calcTotals(cartItems);
-  const pendingDiscountList = estimates.filter(e => e.status === 'pending_discount');
-  const readyBillingList = estimates.filter(e => e.status === 'ready_for_billing');
-  const soldWithPhotosCount = soldStock.filter(i => i.imageUrl && !i.photoClearedByAdmin).length;
+  const totals = calcTotals(cartItems);
+  const pendingDiscount = estimates.filter(e => e.status === 'pending_discount');
+  const readyBilling = estimates.filter(e => e.status === 'ready_for_billing');
+  const soldPhotos = soldStock.filter(i => i.imageUrl && !i.photoClearedByAdmin).length;
 
   return (
     <div className="space-y-4">
       {banner && (
-        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between">
-          <span className="flex items-center gap-1.5"><CheckCircle2 size={15} /> {banner}</span>
-          <button onClick={() => setBanner('')}><X size={14} /></button>
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex justify-between">
+          <span>{banner}</span><button onClick={() => setBanner('')}><X size={14} /></button>
         </div>
       )}
 
-      {/* White Tile Navigation Pills */}
-      <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs flex flex-wrap gap-1.5">
+      <div className="bg-white p-2 rounded-xl border flex flex-wrap gap-1.5">
         {[
-          { id: 'estimate', label: '1. Salesman Estimate', icon: ShoppingBag },
-          { id: 'manager', label: `2. Manager Discount (${pendingDiscountList.length})`, icon: Percent },
-          { id: 'billing', label: `3. Billing Counter (${readyBillingList.length})`, icon: Printer },
-          { id: 'sold', label: `4. Invoices & Sold Folder (${soldStock.length})`, icon: Archive }
+          { id: 'estimate', label: '1. Estimate', icon: ShoppingBag },
+          { id: 'manager', label: `2. Discount (${pendingDiscount.length})`, icon: Percent },
+          { id: 'billing', label: `3. Billing (${readyBilling.length})`, icon: Printer },
+          { id: 'sold', label: `4. Sold Folder (${soldStock.length})`, icon: Archive }
         ].map(t => {
           const Icon = t.icon;
           return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                tab === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
+            <button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${tab === t.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
               <Icon size={14} /> {t.label}
             </button>
           );
         })}
       </div>
 
-      {/* TAB 1: SALESMAN ESTIMATE */}
       {tab === 'estimate' && (
         <div className="grid lg:grid-cols-3 gap-4 text-xs">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
-            <h3 className="text-sm font-bold text-slate-900">Search Jewelry by Code / Customer</h3>
-            <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50">
-              <Search size={15} className="text-slate-400" />
-              <input
-                type="text"
-                value={codeSearch}
-                onChange={(e) => setCodeSearch(e.target.value)}
-                placeholder="Tag code, item type, or customer..."
-                className="w-full bg-transparent outline-none font-semibold"
-              />
+          <div className="bg-white p-5 rounded-2xl border space-y-3">
+            <h3 className="text-sm font-bold">Select Jewelry</h3>
+            <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 bg-slate-50">
+              <Search size={14} className="text-slate-400" />
+              <input type="text" value={codeSearch} onChange={(e) => setCodeSearch(e.target.value)} placeholder="Search code, type, customer..." className="w-full bg-transparent outline-none font-semibold" />
             </div>
-
-            <div className="space-y-2 max-h-[420px] overflow-y-auto pt-1">
-              {matchingLiveStock.map(item => {
-                const rate = getDefaultRateForItem(item);
-                const wt = Number(item.netWeight) || Number(item.grossWeight) || 0;
-                const estMetal = wt * rate;
-                const estMaking = item.makingMode === 'percent' ? estMetal * (item.makingValue / 100) : wt * item.makingValue;
-                const approxTotal = Math.round((estMetal + estMaking) * 1.03);
-
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => handleAddItemToEstimate(item)}
-                    className={`p-2.5 rounded-xl border cursor-pointer flex items-center gap-3 transition-all ${
-                      item.reservedFor
-                        ? 'border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50'
-                        : 'border-slate-200/80 hover:border-amber-400 hover:bg-amber-50/30'
-                    }`}
-                  >
-                    <img src={item.imageUrl} alt={item.code} className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 truncate">{item.code}</span>
-                        {item.reservedFor && (
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold shrink-0">
-                            Ready: {item.reservedFor}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-500">{item.material} • {item.type} • <strong>{wt}g</strong></div>
-                      {item.alterationNote && (
-                        <div className="text-[10px] text-emerald-800 font-medium truncate">Amended: {item.alterationNote}</div>
-                      )}
-                      <div className="text-[11px] font-bold text-amber-700">Est. ₹{approxTotal.toLocaleString('en-IN')} (incl. GST)</div>
-                    </div>
-                    <span className="px-2 py-1 bg-slate-900 text-white rounded-md text-[10px] font-bold shrink-0">+ Add</span>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {matches.map(item => (
+                <div key={item.id} onClick={() => handleAddItem(item)} className={`p-2.5 rounded-xl border cursor-pointer flex items-center gap-2.5 ${item.reservedFor ? 'border-emerald-300 bg-emerald-50/40' : 'hover:border-amber-400'}`}>
+                  <img src={item.imageUrl} alt={item.code} className="w-11 h-11 rounded object-cover border shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold truncate">{item.code} {item.reservedFor && <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded ml-1">Ready: {item.reservedFor}</span>}</div>
+                    <div className="text-[11px] text-slate-500">{item.type} • {item.netWeight || item.grossWeight}g</div>
                   </div>
-                );
-              })}
-
-              {/* Locked Items Currently at Karigar for Amendment */}
-              {lockedWorkshopMatches.map(locked => (
-                <div key={locked.id} className="p-2.5 rounded-xl border border-amber-200 bg-amber-50/50 flex items-center gap-2.5 opacity-85">
-                  <Wrench size={15} className="text-amber-700 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-bold text-slate-800">{locked.code} — Locked in Amendment</div>
-                    <div className="text-[10px] text-amber-800">For: {locked.alteration?.customerName} • Complete return in Karigar Desk first</div>
-                  </div>
+                  <span className="px-2 py-1 bg-slate-900 text-white rounded text-[10px] font-bold">+ Add</span>
                 </div>
               ))}
-
-              {matchingLiveStock.length === 0 && lockedWorkshopMatches.length === 0 && (
-                <p className="text-center text-slate-400 py-6">No matching Live Stock found.</p>
-              )}
+              {lockedMatches.map(l => (
+                <div key={l.id} className="p-2.5 rounded-xl border border-amber-200 bg-amber-50/60 flex items-center gap-2 text-[11px]">
+                  <Wrench size={14} className="text-amber-700 shrink-0" />
+                  <div><strong>{l.code}</strong> in Amendment for {l.alteration?.customerName}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Right: Customer Estimate Sheet */}
-          <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900">Customer Estimate Sheet</h3>
-              <span className="text-[11px] text-slate-500">Auto-calculated with Live Metal Rates & 3% GST</span>
-            </div>
-
+          <div className="lg:col-span-2 bg-white p-5 rounded-2xl border space-y-4">
+            <h3 className="text-sm font-bold border-b pb-2">Customer Estimate</h3>
             <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Customer Name</label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Enter customer name"
-                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg font-semibold"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Customer Mobile (for WhatsApp Bill)</label>
-                <input
-                  type="tel"
-                  value={customerMobile}
-                  onChange={(e) => setCustomerMobile(e.target.value)}
-                  placeholder="10-digit mobile number"
-                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg"
-                />
-              </div>
+              <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer Name" className="px-3 py-1.5 border rounded-lg font-semibold" />
+              <input type="tel" value={customerMobile} onChange={(e) => setCustomerMobile(e.target.value)} placeholder="Customer Mobile (WhatsApp)" className="px-3 py-1.5 border rounded-lg" />
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <div className="overflow-x-auto border rounded-xl">
               <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                  <tr>
-                    <th className="p-2.5">Item & Amendment Note</th>
-                    <th className="p-2.5">Net Wt</th>
-                    <th className="p-2.5">Purity & Rate</th>
-                    <th className="p-2.5">Metal Val</th>
-                    <th className="p-2.5">Making</th>
-                    <th className="p-2.5 w-8"></th>
-                  </tr>
+                <thead className="bg-slate-50 border-b">
+                  <tr><th className="p-2.5">Item & Note</th><th className="p-2.5">Wt</th><th className="p-2.5">Purity</th><th className="p-2.5">Metal</th><th className="p-2.5">Making</th><th className="p-2.5"></th></tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y">
                   {cartItems.map(line => (
                     <tr key={line.id}>
                       <td className="p-2.5">
-                        <div className="flex items-start gap-2">
-                          <img src={line.imageUrl} alt={line.code} className="w-9 h-9 rounded object-cover border shrink-0 mt-0.5" />
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-slate-900">{line.code} • {line.type}</div>
-                            <input
-                              type="text"
-                              value={line.alterationNote}
-                              onChange={(e) => handleUpdateLineNote(line.id, e.target.value)}
-                              placeholder="Optional bill note / amendment detail..."
-                              className="mt-1 w-full px-2 py-0.5 text-[10px] border border-slate-200 rounded bg-slate-50/70 text-slate-700"
-                            />
-                          </div>
-                        </div>
+                        <div className="font-bold">{line.code} • {line.type}</div>
+                        <input type="text" value={line.alterationNote} onChange={(e) => setCartItems(cartItems.map(c => c.id === line.id ? { ...c, alterationNote: e.target.value } : c))} placeholder="Optional amendment note..." className="mt-1 w-full px-2 py-0.5 text-[10px] border rounded bg-slate-50" />
                       </td>
-                      <td className="p-2.5 font-bold text-slate-900">{line.netWeight}g</td>
+                      <td className="p-2.5 font-bold">{line.netWeight}g</td>
                       <td className="p-2.5">
                         {line.material !== 'Silver' ? (
-                          <select
-                            value={line.purity}
-                            onChange={(e) => handleChangeLinePurity(line.id, e.target.value)}
-                            className="px-2 py-1 border border-slate-200 rounded text-[11px] font-bold bg-amber-50/50"
-                          >
-                            <option value="22K">22K (₹{liveRates.gold22})</option>
-                            <option value="24K">24K (₹{liveRates.gold24})</option>
-                            <option value="18K">18K (₹{liveRates.gold18})</option>
+                          <select value={line.purity} onChange={(e) => handleChangePurity(line.id, e.target.value)} className="px-1.5 py-1 border rounded font-bold bg-amber-50/50">
+                            <option value="22K">22K (₹{liveRates.gold22})</option><option value="24K">24K (₹{liveRates.gold24})</option><option value="18K">18K (₹{liveRates.gold18})</option>
                           </select>
-                        ) : (
-                          <span className="font-semibold">Silver (₹{line.lockedRate}/g)</span>
-                        )}
+                        ) : <span>Silver (₹{line.lockedRate})</span>}
                       </td>
-                      <td className="p-2.5 font-semibold">₹{line.metalValue.toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-semibold text-slate-700">₹{line.finalMaking.toLocaleString('en-IN')}</td>
-                      <td className="p-2.5">
-                        <button onClick={() => setCartItems(cartItems.filter(c => c.id !== line.id))} className="text-red-500 hover:bg-red-50 p-1 rounded">
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
+                      <td className="p-2.5">₹{line.metalValue.toLocaleString('en-IN')}</td>
+                      <td className="p-2.5">₹{line.finalMaking.toLocaleString('en-IN')}</td>
+                      <td className="p-2.5"><button onClick={() => setCartItems(cartItems.filter(c => c.id !== line.id))} className="text-red-500"><Trash2 size={14} /></button></td>
                     </tr>
                   ))}
-                  {cartItems.length === 0 && (
-                    <tr>
-                      <td colSpan="6" className="p-8 text-center text-slate-400">Select items from the left to build an instant customer estimate.</td>
-                    </tr>
-                  )}
+                  {!cartItems.length && <tr><td colSpan="6" className="p-6 text-center text-slate-400">Add items from the left list.</td></tr>}
                 </tbody>
               </table>
             </div>
 
             {cartItems.length > 0 && (
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
-                <div className="space-y-1 text-xs">
-                  <div className="text-slate-600">Metal Value: <strong>₹
+              <div className="bg-slate-50 p-4 rounded-xl border flex flex-wrap justify-between items-center gap-3">
+                <div>
+                  <div>Metal: <strong>₹{totals.metalTotal.toLocaleString('en-IN')}</strong> | Making: <strong>₹{totals.finalMakingTotal.toLocaleString('en-IN')}</strong> | GST (3%): <strong>₹{totals.gstAmount.toLocaleString('en-IN')}</strong></div>
+                  <div className="text-base font-bold text-slate-900 mt-0.5">Grand Total: ₹{totals.grandTotal.toLocaleString('en-IN')}</div>
+                </div>
+                {canEstimate && (
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => handleCreateEstimate('pending_discount')} className="px-3.5 py-2 bg-amber-600 text-white font-semibold rounded-lg inline-flex items-center gap-1"><Percent size={14} /> Manager Discount</button>
+                    <button type="button" onClick={() => handleCreateEstimate('ready_for_billing')} className="px-4 py-2 bg-slate-900 text-white font-semibold rounded-lg inline-flex items-center gap-1"><Send size={14} /> Direct to Billing</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'manager' && (
+        <div className="bg-white p-5 rounded-2xl border space-y-4 text-xs">
+          <div className="flex justify-between items-center border-b pb-3">
+            <h3 className="text-sm font-bold">Manager Discount Desk ({pendingDiscount.length})</h3>
+            <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 font-semibold inline-flex items-center gap-1"><Lock size={12} /> Gold & 3% GST Locked</span>
+          </div>
+          {pendingDiscount.map(est => {
+            const isEd = activeDiscountEstId === est.id;
+            const target = isEd ? parseFloat(targetFinalInput) : NaN;
+            const revMk = !isNaN(target) ? Math.round(((target / 1.03) - est.metalTotal) * 100) / 100 : 0;
+            return (
+              <div key={est.id} className="p-4 rounded-xl border space-y-2.5">
+                <div className="flex justify-between">
+                  <div><strong>{est.estNo}</strong> • {est.customerName} (Salesman: {est.salesmanName})</div>
+                  <div className="font-bold text-sm">₹{est.grandTotal.toLocaleString('en-IN')}</div>
+                </div>
+                {canDiscount && (isEd ? (
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <input type="number" value={targetFinalInput} onChange={(e) => setTargetFinalInput(e.target.value)} placeholder="Target Final ₹" className="px-3 py-1.5 bg-white border rounded-lg font-bold w-40" />
+                      <button type="button" onClick={() => applyReverseDiscount(est)} className="px-3.5 py-1.5 bg-emerald-600 text-white font-semibold rounded-lg">Approve & Send Billing</button>
+                      <button type="button" onClick={() => setActiveDiscountEstId(null)} className="px-3 py-1.5 bg-white border rounded-lg">Cancel</button>
+                    </div>
+                    {!isNaN(target) && <div className="text-[11px]">Adjusted Making: <strong>₹{revMk}</strong> (Metal ₹{est.metalTotal} + 3% GST Locked)</div>}
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => { setActiveDiscountEstId(est.id); setTargetFinalInput(String(Math.floor(est.grandTotal))); }} className="px-3 py-1.5 bg-amber-600 text-white font-semibold rounded-lg">Set Final Amount</button>
+                    <button type="button" onClick={() => setEstimates(estimates.map(e => e.id === est.id ? { ...e, status: 'ready_for_billing', approvedBy: currentUser.name } : e))} className="px-3 py-1.5 bg-slate-100 font-semibold rounded-lg">Approve Full Rate</button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {!pendingDiscount.length && <p className="text-center text-slate-400 py-6">No pending discount requests.</p>}
+        </div>
+      )}
+
+      {tab === 'billing' && (
+        <div className="bg-white p-5 rounded-2xl border space-y-4 text-xs">
+          <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-3">
+            <h3 className="text-sm font-bold">Billing Counter ({readyBilling.length})</h3>
+            <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className="px-3 py-1.5 border rounded-lg font-semibold">
+              <option value="UPI / Bank">UPI / Bank</option><option value="Cash">Cash</option><option value="Card">Card</option><option value="Old Gold + Cash">Old Gold + Cash</option>
+            </select>
+          </div>
+          {readyBilling.map(est => (
+            <div key={est.id} className="p-4 rounded-xl border flex flex-wrap justify-between items-center gap-3">
+              <div>
+                <div className="font-bold text-sm">{est.estNo} • {est.customerName}</div>
+                <div className="text-slate-500">Items: {est.items.map(i => `${i.code} (${i.netWeight}g)`).join(', ')}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right font-bold text-base">₹{est.grandTotal.toLocaleString('en-IN')}</div>
+                {canPrintBill && <button type="button" onClick={() => handleGenerateBill(est)} className="px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg inline-flex items-center gap-1"><FileText size={14} /> Issue GST Bill</button>}
+              </div>
+            </div>
+          ))}
+          {!readyBilling.length && <p className="text-center text-slate-400 py-6">No bills pending.</p>}
+        </div>
+      )}
+
+      {tab === 'sold' && (
+        <div className="space-y-4 text-xs">
+          <div className="bg-white rounded-2xl border overflow-hidden">
+            <div className="p-4 border-b font-bold text-sm">Generated Invoices ({invoices.length})</div>
+            <div className="divide-y">
+              {invoices.map(inv => (
+                <div key={inv.id} className="p-3.5 flex flex-wrap justify-between items-center gap-2">
+                  <div><strong>{inv.invoiceNo}</strong> • {inv.customerName} ({inv.date}) — <strong>₹{inv.grandTotal.toLocaleString('en-IN')}</strong></div>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setViewingInvoice(inv)} className="px-2.5 py-1 bg-slate-900 text-white font-semibold rounded inline-flex items-center gap-1"><Printer size={12} /> 2-Copy Bill</button>
+                    <button onClick={() => sendWhatsApp(inv)} className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-semibold rounded inline-flex items-center gap-1"><MessageCircle size={12} /> WhatsApp</button>
+                  </div>
+                </div>
+              ))}
+              {!invoices.length && <div className="p-6 text-center text-slate-400">No invoices yet.</div>}
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border space-y-3">
+            <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-2">
+              <h3 className="text-sm font-bold">Sold Items Folder ({soldStock.length})</h3>
+              {soldPhotos > 0 && <span className="px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded text-[11px] font-semibold inline-flex items-center gap-1"><AlertCircle size={13} /> {soldPhotos} sold photo(s) in cloud</span>}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {soldStock.map(it => (
+                <div key={it.id} className="p-2.5 border rounded-xl bg-slate-50/50 space-y-1.5">
+                  {it.imageUrl ? <img src={it.imageUrl} alt={it.code} className="w-full h-24 object-cover rounded border" /> : <div className="w-full h-24 rounded bg-slate-100 flex items-center justify-center text-slate-400 text-[10px]">Photo Cleared</div>}
+                  <div className="font-bold">{it.code} ({it.netWeight}g)</div>
+                  <div className="text-[10px] text-slate-500">Bill: {it.invoiceNo}</div>
+                  {isAdmin && it.imageUrl && (confirmClearId === it.id ? (
+                    <button onClick={() => { setInventoryItems(inventoryItems.map(x => x.id === it.id ? { ...x, imageUrl: '', photoClearedByAdmin: true } : x)); setConfirmClearId(null); }} className="w-full py-1 bg-red-600 text-white rounded text-[10px] font-bold">Confirm Delete Photo</button>
+                  ) : (
+                    <button onClick={() => setConfirmClearId(it.id)} className="w-full py-1 bg-red-50 text-red-700 rounded text-[10px] font-semibold">Delete Sold Photo</button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5 space-y-4">
+            <div className="flex justify-between items-center border-b pb-2 print:hidden">
+              <span className="text-sm font-bold">2-Copy Tax Invoice</span>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} className="px-3 py-1 bg-slate-900 text-white text-xs font-semibold rounded">Print 2 Copies / PDF</button>
+                <button onClick={() => sendWhatsApp(viewingInvoice)} className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded">WhatsApp</button>
+                <button onClick={() => setViewingInvoice(null)} className="px-3 py-1 bg-slate-100 text-xs font-semibold rounded">Close</button>
+              </div>
+            </div>
+            {['ORIGINAL FOR CUSTOMER', 'DUPLICATE FOR SHOWROOM'].map((copy, idx) => (
+              <div key={copy} className={`p-4 border border-slate-300 rounded-xl text-xs space-y-2 ${idx === 1 ? 'border-dashed mt-4' : ''}`}>
+                <div className="flex justify-between border-b pb-2">
+                  <div><div className="font-bold text-sm">SWARNASETU JEWELLERS</div><div className="text-[10px] text-slate-500">Tax Invoice (GST 3%)</div></div>
+                  <div className="text-right"><span className="px-1.5 py-0.5 bg-slate-100 border text-[9px] font-bold">{copy}</span><div className="font-bold">{viewingInvoice.invoiceNo}</div><div className="text-[10px]">{viewingInvoice.date}</div></div>
+                </div>
+                <div className="flex justify-between text-[11px] bg-slate-50 p-2 rounded">
+                  <span>Customer: <strong>{viewingInvoice.customerName}</strong></span>
+                  <span>Mode: <strong>{viewingInvoice.paymentMode}</strong></span>
+                </div>
+                <table className="w-full text-left border border-slate-300">
+                  <thead className="bg-slate-100 border-b text-[10px]">
+                    <tr><th className="p-1.5 border-r">S.No</th><th className="p-1.5 border-r">Description & Photo</th><th className="p-1.5 border-r">Weight</th><th className="p-1.5 border-r">Rate</th><th className="p-1.5 text-right">Making</th></tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {viewingInvoice.items.map((it, i) => (
+                      <tr key={it.id}>
+                        <td className="p-1.5 border-r align-top font-bold">{i + 1}</td>
+                        <td className="
