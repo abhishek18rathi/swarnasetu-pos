@@ -17,6 +17,7 @@ import KittyModule from './modules/KittyModule';
 import CustomOrdersModule from './modules/CustomOrdersModule';
 import TallyExcelModule from './modules/TallyExcelModule';
 import B2bHuidPurchaseModule from './modules/B2bHuidPurchaseModule';
+import UrdModule from './modules/UrdModule';
 
 const DEFAULT_ADMIN = {
   id: 'sonu', pass: '@4266@', name: 'Sonu (Master Admin)', role: 'Admin',
@@ -41,7 +42,7 @@ const MODULES = [
   { id: 'exports', title: 'Tally & Excel', desc: 'Bulk Import, CSV & Tally XML', icon: FileSpreadsheet, color: 'text-green-700 bg-green-50', ready: true },
   { id: 'orders', title: 'Custom Orders', desc: 'Order Book & WhatsApp Alerts', icon: ClipboardList, color: 'text-orange-600 bg-orange-50', ready: true },
   { id: 'purchase', title: 'B2B & HUID Stock', desc: 'Wholesaler Bills & HUID Tracking', icon: Truck, color: 'text-cyan-600 bg-cyan-50', ready: true },
-  { id: 'urd', title: 'Old Gold (URD)', desc: 'Cash Payouts & PAN Compliance', icon: Coins, color: 'text-yellow-700 bg-yellow-50', ready: false }
+  { id: 'urd', title: 'Old Gold (URD)', desc: 'Cash Payouts & PAN Compliance', icon: Coins, color: 'text-yellow-700 bg-yellow-50', ready: true }
 ];
 
 export default function App() {
@@ -83,6 +84,8 @@ export default function App() {
   const [suppliers, setSuppliers] = useState([]);
   const [b2bPurchases, setB2bPurchases] = useState([]);
 
+  const [urdRecords, setUrdRecords] = useState([]);
+
   useEffect(() => {
     const docRef = doc(db, 'swarnasetu_cloud', 'erp_master_v2');
     const unsub = onSnapshot(docRef, (snap) => {
@@ -111,6 +114,7 @@ export default function App() {
         if (d.customOrders) setCustomOrders(d.customOrders);
         if (d.suppliers) setSuppliers(d.suppliers);
         if (d.b2bPurchases) setB2bPurchases(d.b2bPurchases);
+        if (d.urdRecords) setUrdRecords(d.urdRecords);
       }
       setIsLoaded(true);
     });
@@ -420,11 +424,17 @@ export default function App() {
           />
         )}
 
-        {!['dashboard', 'payroll', 'inventory', 'billing', 'karigar', 'crm', 'accounts', 'barcode', 'kitty', 'orders', 'exports', 'purchase', 'rates'].includes(activeModule) && (
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-10 text-center max-w-md mx-auto">
-            <h3 className="text-sm font-bold text-slate-900 capitalize">{activeModule} Module</h3>
-            <p className="text-xs text-slate-500 mt-1">Module slot ready. Say "Build {activeModule}" when you want to activate this file.</p>
-          </div>
+        {activeModule === 'urd' && (
+          <UrdModule
+            currentUser={currentUser}
+            liveRates={liveRates}
+            urdRecords={urdRecords}
+            setUrdRecords={(v) => { setUrdRecords(v); syncToCloud({ urdRecords: v }); }}
+            rojmelEntries={rojmelEntries}
+            setRojmelEntries={(v) => { setRojmelEntries(v); syncToCloud({ rojmelEntries: v }); }}
+            melterJobs={melterJobs}
+            setMelterJobs={(v) => { setMelterJobs(v); syncToCloud({ melterJobs: v }); }}
+          />
         )}
       </main>
     </div>
